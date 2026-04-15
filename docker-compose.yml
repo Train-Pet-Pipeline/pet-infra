@@ -14,7 +14,8 @@ services:
       file: docker/labelstudio/docker-compose.yml
       service: labelstudio
     depends_on:
-      - labelstudio-db
+      labelstudio-db:
+        condition: service_healthy
 
   labelstudio-db:
     extends:
@@ -25,6 +26,12 @@ services:
     extends:
       file: docker/wandb/docker-compose.yml
       service: wandb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
 volumes:
   pet-data:

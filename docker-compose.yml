@@ -1,0 +1,33 @@
+services:
+  dev:
+    build:
+      context: docker/dev
+    volumes:
+      - ..:/workspace
+      - pet-data:/data
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+
+  labelstudio:
+    extends:
+      file: docker/labelstudio/docker-compose.yml
+      service: labelstudio
+    depends_on:
+      - labelstudio-db
+
+  labelstudio-db:
+    extends:
+      file: docker/labelstudio/docker-compose.yml
+      service: labelstudio-db
+
+  wandb:
+    extends:
+      file: docker/wandb/docker-compose.yml
+      service: wandb
+
+volumes:
+  pet-data:
+  labelstudio-data:
+  labelstudio-pg:
+  wandb-data:

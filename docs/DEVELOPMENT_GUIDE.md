@@ -1198,8 +1198,8 @@ pending
 
 ```yaml
 database:
-  path: /data/pet.db                # pet-data 的 SQLite 数据库路径
-  data_root: /data                  # 帧图像根目录
+  path: /data/pet-data/pet_data.db  # pet-data 的 SQLite 数据库路径
+  data_root: /data/pet-data         # 帧图像根目录（与 pet-data 的 data_root 一致）
 
 annotation:
   batch_size: 16
@@ -1215,12 +1215,37 @@ models:
     provider: openai_compat
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
     model_name: qwen2.5-vl-72b-instruct
-    timeout: 60
-    max_retries: 3
     accounts:
       - key_env: QWEN_API_KEY_1
-        rpm: 10
+        rpm: 60
         tpm: 100000
+      - key_env: QWEN_API_KEY_2
+        rpm: 60
+        tpm: 100000
+    timeout: 60
+    max_retries: 3
+
+  doubao-vision:                    # 备用模型（豆包视觉）
+    provider: doubao
+    base_url: https://ark.cn-beijing.volces.com/api/v3
+    model_name: doubao-vision-pro-32k
+    accounts:
+      - key_env: DOUBAO_API_KEY_1
+        rpm: 30
+        tpm: 50000
+    timeout: 60
+    max_retries: 3
+
+  local-vllm:                       # 本地 vLLM 部署（开发/大批量）
+    provider: vllm
+    base_url: http://localhost:8000/v1
+    model_name: Qwen/Qwen2.5-VL-72B-Instruct
+    accounts:
+      - key_env: ""
+        rpm: 999
+        tpm: 999999
+    timeout: 120
+    max_retries: 2
 
 dpo:
   min_pairs_per_release: 500        # 每次 OTA 发布前累积 DPO 对下限

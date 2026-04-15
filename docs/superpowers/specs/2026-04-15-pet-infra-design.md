@@ -320,11 +320,6 @@ ignore_missing_imports = true
 3. pet-data ~ pet-ota 逐个接入 → 各自 minor bump
 4. 全链路验证：改 pet-schema → 观察 dispatch 触发下游 CI
 
-### 9.3 全链路依赖安装方式
-
-- 本地开发：`pip install -e ../pet-infra`（可编辑安装）
-- CI / 正式依赖：`pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra.git@v1.0.0`
-
 ## 11. 优先级
 
 1. **Python 包优先**：`src/pet_infra/` 五个模块，所有仓库的基础依赖

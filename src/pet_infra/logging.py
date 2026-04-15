@@ -25,7 +25,9 @@ class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format a log record as JSON."""
         log_data: dict[str, Any] = {
-            "ts": datetime.datetime.fromtimestamp(record.created, tz=datetime.UTC).isoformat(),
+            "ts": datetime.datetime.fromtimestamp(
+                record.created, tz=datetime.timezone.utc  # noqa: UP017 — 3.10 compat
+            ).isoformat(),
             "level": record.levelname,
             "repo": record.name,
             "event": record.getMessage(),

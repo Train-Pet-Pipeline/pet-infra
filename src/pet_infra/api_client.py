@@ -34,7 +34,7 @@ def _is_retryable(exc: BaseException) -> bool:
     """Determine if an exception warrants a retry."""
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in (429, 500, 502, 503, 504)
-    return isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout))
+    return isinstance(exc, httpx.ConnectError | httpx.ReadTimeout | httpx.WriteTimeout)
 
 
 class TeacherClient:

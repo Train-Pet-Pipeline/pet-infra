@@ -1,0 +1,15 @@
+# Shared targets for all pet-pipeline repos.
+# Include in repo Makefile: -include ../pet-infra/shared/Makefile.include
+# Repos define their own: setup, test (and any custom targets).
+
+.PHONY: lint clean sync-infra
+
+lint:
+	bash ../pet-infra/scripts/lint.sh
+
+clean:
+	rm -rf .pytest_cache .mypy_cache .ruff_cache dist/ *.egg-info
+	find . -type d -name __pycache__ -exec rm -rf {} +
+
+sync-infra:
+	bash ../pet-infra/scripts/sync_to_repo.sh

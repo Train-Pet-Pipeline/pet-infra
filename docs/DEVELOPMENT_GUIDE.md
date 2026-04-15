@@ -1138,29 +1138,42 @@ dvc:
 
 ```
 pet-annotation/
-├── teacher/
-│   ├── inference.py               # vLLM batch 推理
-│   ├── batch_runner.py            # 断点续跑，每 batch 写回数据库
-│   └── cost_tracker.py            # token 用量追踪，防费用失控
-├── quality/
-│   ├── auto_check.py              # schema 验证 + 代码层额外验证
-│   ├── llm_judge.py               # LLM-as-Judge 一致性检查
-│   └── sampling.py                # 置信度抽样策略
-├── human_review/
-│   ├── sft_config.xml             # Label Studio SFT 审核界面（含预填配置）
-│   ├── dpo_config.xml             # Label Studio DPO Pairwise 界面
-│   ├── import_to_ls.py            # VLM 输出 → Label Studio task（含 predictions 预填）
-│   └── export_from_ls.py          # Label Studio 审核结果 → 数据库
-├── dpo/
-│   ├── generate_pairs.py          # 72B vs 2B 配对，生成候选对
-│   ├── import_app_feedback.py     # APP 用户纠错 → Label Studio
-│   └── validate_pairs.py          # DPO 对合法性验证
-├── export/
-│   ├── to_sharegpt.py             # 导出 SFT 训练格式（见 §4.5）
-│   ├── to_dpo_pairs.py            # 导出 DPO 格式（见 §4.5）
-│   └── to_audio_labels.py         # 音频分类标签导出
+├── src/pet_annotation/
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── cli.py                     # Click CLI: annotate/check/export/stats
+│   ├── config.py                  # Pydantic params.yaml 加载 + JSON 日志配置
+│   ├── store.py                   # AnnotationStore — 所有 SQLite 操作
+│   ├── teacher/
+│   │   ├── orchestrator.py        # 异步批量标注引擎（asyncio + ThreadPoolExecutor）
+│   │   ├── provider.py            # BaseProvider ABC + ProviderRegistry
+│   │   ├── providers/
+│   │   │   ├── openai_compat.py   # OpenAI 兼容 API（DashScope/Qwen）
+│   │   │   ├── doubao.py          # 豆包/火山引擎
+│   │   │   └── vllm.py            # 自部署 vLLM
+│   │   ├── rate_tracker.py        # 滑动窗口多 key 限速调度
+│   │   └── cost_tracker.py        # token 用量追踪，防费用失控
+│   ├── quality/
+│   │   ├── auto_check.py          # schema 验证 + 置信度 + 采样 → 审核路由
+│   │   ├── llm_judge.py           # LLM-as-Judge 一致性检查（stub）
+│   │   └── sampling.py            # 置信度抽样策略
+│   ├── human_review/
+│   │   ├── import_to_ls.py        # VLM 输出 → Label Studio task（stub）
+│   │   └── export_from_ls.py      # Label Studio 审核结果 → 数据库（stub）
+│   ├── dpo/
+│   │   ├── generate_pairs.py      # primary vs secondary 模型配对
+│   │   ├── import_app_feedback.py # APP 用户纠错 → Label Studio（stub）
+│   │   └── validate_pairs.py      # DPO 对合法性验证（5 规则）
+│   └── export/
+│       ├── to_sharegpt.py         # 导出 SFT 训练格式（见 §4.5）
+│       ├── to_dpo_pairs.py        # 导出 DPO 格式（见 §4.5）
+│       └── to_audio_labels.py     # 音频分类标签导出（stub）
+├── migrations/
+│   └── 001_create_annotation_tables.sql
+├── tests/                         # 51 tests
 ├── dvc.yaml
-└── params.yaml
+├── params.yaml
+└── pyproject.toml
 ```
 
 **标注状态机（必须实现，用数据库事务保证原子性）：**
@@ -1177,11 +1190,30 @@ pending
 **`params.yaml`：**
 
 ```yaml
+database:
+  path: /data/pet.db                # pet-data 的 SQLite 数据库路径
+  data_root: /data                  # 帧图像根目录
+
 annotation:
   batch_size: 16
+  max_concurrent: 50                # asyncio Semaphore 并发上限
   max_daily_tokens: 10_000_000      # 超出停止并告警
   review_sampling_rate: 0.15        # 随机抽样送人工审核比例
   low_confidence_threshold: 0.70    # confidence_overall 低于此强制人工审核
+  primary_model: qwen2.5-vl-72b    # 主标注模型（写 annotations 表）
+  schema_version: "1.0"            # pet-schema 版本
+
+models:
+  qwen2.5-vl-72b:
+    provider: openai_compat
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model_name: qwen2.5-vl-72b-instruct
+    timeout: 60
+    max_retries: 3
+    accounts:
+      - key_env: QWEN_API_KEY_1
+        rpm: 10
+        tpm: 100000
 
 dpo:
   min_pairs_per_release: 500        # 每次 OTA 发布前累积 DPO 对下限
@@ -1190,10 +1222,13 @@ dpo:
 **`validate_pairs.py` 强制检查：**
 
 ```python
-def validate_pair(chosen: dict, rejected: dict, pair_meta: dict) -> tuple[bool, list[str]]:
+def validate_pair(
+    chosen: dict, rejected: dict, pair_meta: dict,
+    schema_version: str = "1.0",
+) -> tuple[bool, list[str]]:
     """
     以下任一条失败 → 整对数据丢弃，不进训练集。
-    1. chosen 通过 schema 验证
+    1. chosen 通过 schema 验证（传 schema_version）
     2. rejected 通过 schema 验证（格式合法但内容错误）
     3. chosen 和 rejected 的 narrative 不完全相同
     4. 用户纠错来源的 pair：rejected 必须有 inference_id 追踪，是模型实际输出

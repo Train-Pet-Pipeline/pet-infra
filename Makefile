@@ -1,0 +1,14 @@
+.PHONY: setup test lint clean
+
+setup:
+	python -m pip install -e ".[dev,api,sync]"
+
+test:
+	pytest tests/ -v --tb=short
+
+lint:
+	ruff check src/ tests/ && mypy src/
+
+clean:
+	rm -rf .pytest_cache .mypy_cache .ruff_cache dist/ *.egg-info
+	find . -type d -name __pycache__ -exec rm -rf {} +

@@ -1,0 +1,31 @@
+# Release Gate — manual pre-release validation.
+name: Release Gate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  full-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone all repos
+        run: |
+          for repo in pet-schema pet-infra pet-data pet-annotation pet-train pet-eval pet-quantize pet-ota; do
+            git clone --depth 1 "https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/Train-Pet-Pipeline/$repo.git" "../$repo" || true
+          done
+
+      - name: Install dependencies
+        run: make setup
+
+      - name: Full test suite
+        run: pytest tests/ -v
+
+      - name: Check dependency versions
+        run: bash ../pet-infra/scripts/check_deps.sh

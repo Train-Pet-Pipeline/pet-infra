@@ -1,0 +1,26 @@
+# Schema Guard — place in pet-schema/.github/workflows/schema_guard.yml
+name: Schema Guard
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  trigger-downstream:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo:
+          - pet-data
+          - pet-annotation
+          - pet-train
+          - pet-eval
+          - pet-quantize
+          - pet-ota
+    steps:
+      - name: Dispatch to ${{ matrix.repo }}
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.CROSS_REPO_TOKEN }}
+          repository: Train-Pet-Pipeline/${{ matrix.repo }}
+          event-type: schema-updated

@@ -1567,22 +1567,41 @@ TOLERANCE = 0.05  # 比例偏差超过 5% 则拒绝继续量化
 
 ```
 pet-ota/
-├── server/
-│   ├── docker-compose.yml
-│   ├── mender.env                 # 不提交，.env.example 示意
-│   └── nginx.conf                 # 强制 HTTPS
-├── packaging/
-│   ├── make_delta.sh              # bsdiff 差分打包
-│   ├── upload_artifact.py
-│   └── create_deployment.py      # 指定设备组，不硬编码设备 ID
-├── release/
-│   ├── check_gate.py              # 发布门控（见下方）
-│   ├── canary_rollout.py          # 5% → 观察 48h → 100%
-│   └── rollback.py                # 5 分钟内触发回滚
-└── monitoring/
-    ├── check_update_rate.py       # 成功率监控
-    └── alert.py                   # 失败率超阈值告警
+├── src/pet_ota/
+│   ├── __init__.py
+│   ├── config.py                  # Pydantic params loader + JSON logging
+│   ├── backend/
+│   │   ├── __init__.py
+│   │   ├── base.py                # OTABackend Protocol + DeploymentStatus model
+│   │   └── local.py               # LocalBackend — filesystem implementation
+│   ├── packaging/
+│   │   ├── __init__.py
+│   │   ├── make_delta.py          # bsdiff4 delta packaging
+│   │   ├── upload_artifact.py     # Upload artifact to backend
+│   │   └── create_deployment.py   # Create deployment for device group
+│   ├── release/
+│   │   ├── __init__.py
+│   │   ├── check_gate.py          # 5 gate checks（见下方）
+│   │   ├── canary_rollout.py      # 5%→48h→100% canary logic + state machine
+│   │   └── rollback.py            # Rollback to last known good version
+│   └── monitoring/
+│       ├── __init__.py
+│       ├── check_update_rate.py   # 成功率监控
+│       └── alert.py               # CRITICAL log alerts
+├── tests/
+├── params.yaml
+├── Makefile
+└── pyproject.toml
 ```
+
+**v1 实现偏差说明：**
+
+| 原规划 | 实际实现 | 原因 |
+|---|---|---|
+| `make_delta.sh`（bsdiff） | `make_delta.py`（bsdiff4） | 纯 Python，无系统依赖，测试友好 |
+| `server/`（docker-compose + Mender） | `backend/`（Protocol + LocalBackend） | v1 不需要 Mender 实例，抽象接口保留未来集成 |
+| `mender.env`、`nginx.conf` | v1 不包含 | 真实 Mender 部署时再添加 |
+| Gate checks 查询外部数据源 | `gate_overrides` 注入（via params.yaml） | 跨仓库 gate 是 CI 层面的关注点 |
 
 **发布门控（`check_gate.py`，任一失败则终止发布）：**
 
@@ -1607,33 +1626,48 @@ def check_release_gate(new_version: str) -> tuple[bool, list[str]]:
 
 ```
 pet-infra/
+├── src/
+│   └── pet_infra/
+│       ├── __init__.py            # __version__ = "1.0.0"
+│       ├── logging.py             # JSONFormatter + setup_logging() + get_logger()
+│       ├── retry.py               # standard_retry / standard_retry_async (tenacity wrapper)
+│       ├── device.py              # detect_device() → cuda/mps/cpu/rknn/api
+│       ├── store.py               # BaseStore (SQLite WAL, context manager, transactions)
+│       └── api_client.py          # TeacherClient (httpx, async, retry, rate limit)
+├── shared/
+│   ├── pyproject-base.toml        # 共享 ruff/mypy 配置基线
+│   ├── Makefile.include           # 共享 lint/clean/sync-infra targets
+│   ├── .env.example               # 全局环境变量模板
+│   └── requirements-dev.txt       # pip-compile 生成的锁定依赖
 ├── docker/
-│   ├── teacher/
-│   │   ├── Dockerfile             # vLLM + Qwen2.5-VL-72B，固定 commit hash
-│   │   └── entrypoint.sh
+│   ├── dev/
+│   │   └── Dockerfile             # 开发环境镜像
 │   ├── labelstudio/
 │   │   └── docker-compose.yml
-│   ├── wandb/
-│   │   └── docker-compose.yml
-│   └── dev/
-│       └── Dockerfile             # 开发环境镜像
+│   └── wandb/
+│       └── docker-compose.yml
 ├── docker-compose.yml             # 一键启动完整开发环境
 ├── ci/
 │   └── workflows/
 │       ├── schema_guard.yml       # pet-schema 变更 → 触发所有下游 CI
-│       ├── data_pipeline.yml
-│       ├── annotation_check.yml
-│       ├── train_eval.yml         # 训练完成 → 自动触发评估
+│       ├── standard_ci.yml        # 标准 CI（替代 4 个仓库独立 workflow）
 │       ├── quantize_validate.yml  # 需真实设备，手动触发
-│       └── release_gate.yml
+│       └── release_gate.yml       # 全链验证门控
 ├── scripts/
-│   ├── setup_dev.sh
-│   ├── lint.sh                    # ruff + mypy
-│   └── check_deps.sh              # 扫描各仓库 pet-schema 版本漂移
+│   ├── sync_to_repo.sh            # TOML-aware 配置同步到下游仓库
+│   ├── check_deps.sh              # 扫描各仓库 pet-infra/pet-schema 版本
+│   ├── setup_dev.sh               # 一键搭建开发环境
+│   └── lint.sh                    # ruff + mypy
+├── params.yaml                    # 全局默认参数（retry/logging/api_client/store）
+├── pyproject.toml                 # 包定义 + 工具配置
+├── tests/                         # 38 个测试
 └── docs/
+    ├── DEVELOPMENT_GUIDE.md       # 本文档
     ├── onboarding.md
-    └── runbook.md                 # 常见故障处理手册（必须维护）
+    └── runbook.md
 ```
+
+> **Teacher/vLLM Docker**：待定——取决于本地部署 vs 云端 API 的最终决策。确定后在 `docker/teacher/` 下添加。
 
 **`schema_guard.yml`（跨仓库 CI 的核心）：**
 
@@ -1651,7 +1685,7 @@ jobs:
           token: ${{ secrets.CROSS_REPO_TOKEN }}
           repository: Train-Pet-Pipeline/pet-data
           event-type: schema-updated
-      # 重复 pet-annotation, pet-train, pet-eval, pet-quantize
+      # 重复 pet-annotation, pet-train, pet-eval, pet-quantize, pet-ota
 ```
 
 ---
@@ -1668,9 +1702,13 @@ Python: 3.11.x（固定，在 pyproject.toml 中声明 requires-python = ">=3.11
 pet-schema: git+URL 安装，固定到版本 tag，不用 @main
 ```
 
+pet-infra: 同样通过 git+URL 安装，固定到版本 tag
+  - 本地开发: pip install -e ../pet-infra
+  - CI: pip install "pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra.git@v1.0.0"
+
 ### 6.2 代码风格
 
-所有仓库继承 `pet-infra` 根目录的 `pyproject.toml` 配置：
+所有仓库通过 `make sync-infra` 从 `pet-infra/shared/pyproject-base.toml` 同步 ruff/mypy 配置：
 
 ```toml
 [tool.ruff]
@@ -1691,50 +1729,39 @@ ignore_missing_imports = true
 所有外部 API 调用（vLLM / Wan2.1 / Label Studio / Mender）：
 
 ```python
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-import logging, json, requests
+from pet_infra.retry import standard_retry
+from pet_infra.logging import get_logger
+import httpx
 
-logger = logging.getLogger(__name__)
+logger = get_logger("pet-data")
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception_type((requests.Timeout, requests.ConnectionError))
-)
+@standard_retry
 def call_external_api(endpoint: str, payload: dict, timeout: int = 30) -> dict:
+    """调用外部 API，重试参数从 params.yaml 读取。"""
     try:
-        resp = requests.post(endpoint, json=payload, timeout=timeout)
+        resp = httpx.post(endpoint, json=payload, timeout=timeout)
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        logger.error(json.dumps({
-            "event": "api_call_failed",
-            "endpoint": endpoint,
-            "error_type": type(e).__name__,
-            "error_msg": str(e)[:200],
-        }))
+        logger.error("api_call_failed", extra={
+            "extra": {"endpoint": endpoint, "error_type": type(e).__name__, "error_msg": str(e)[:200]}
+        })
         raise
 ```
+
+> **注意**：`standard_retry` 的默认参数（max_attempts=3, wait_min=2, wait_max=30）从 `pet-infra/params.yaml` 读取。
+> HTTP 客户端统一使用 `httpx`（不使用 `requests`），异步场景用 `standard_retry_async`。
 
 不允许空 `except` 块，不允许静默失败。
 
 ### 6.4 日志规范
 
-所有仓库使用结构化 JSON 日志：
+所有仓库使用 `pet_infra.logging` 提供的结构化 JSON 日志：
 
 ```python
-import logging, json
+from pet_infra.logging import get_logger
 
-# 格式化器在 pet-infra 提供，各仓库 import
-class JSONFormatter(logging.Formatter):
-    def format(self, record):
-        return json.dumps({
-            "ts": self.formatTime(record),
-            "level": record.levelname,
-            "repo": record.name,
-            "event": record.getMessage(),
-            **getattr(record, "extra", {})
-        })
+logger = get_logger("pet-data")
 
 # 记录事件
 logger.info("frame_annotated", extra={
@@ -1821,6 +1848,32 @@ clean:
 
 `manifest.json` 是各版本的运行时绑定合同，设备端安装时以此为准。
 
+### 6.10 pet-infra 共享包
+
+所有仓库安装 `pet-infra` 作为开发依赖，替代各自实现的日志、重试、设备检测等基础设施：
+
+```bash
+# pyproject.toml 中添加
+dependencies = [
+    "pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra.git@v1.0.0",
+]
+```
+
+**提供的模块：**
+
+| 模块 | 用途 | 主要 API |
+|------|------|----------|
+| `pet_infra.logging` | 结构化 JSON 日志 | `get_logger(repo)`, `setup_logging(repo, level)` |
+| `pet_infra.retry` | tenacity 封装 | `standard_retry`, `standard_retry_async` |
+| `pet_infra.device` | 推理设备检测 | `detect_device()` → "cuda"/"mps"/"cpu"/"rknn"/"api" |
+| `pet_infra.store` | SQLite 基类 | `BaseStore`（WAL, context manager, transaction） |
+| `pet_infra.api_client` | 云端教师模型客户端 | `TeacherClient`（httpx, async, 并发限制） |
+
+**配置同步（`make sync-infra`）：**
+
+各仓库通过 `make sync-infra` 从 `pet-infra/shared/` 同步共享配置（ruff/mypy 基线、Makefile targets、.env 模板）。
+同步脚本使用 TOML-aware 合并，保留各仓库自定义的 `per-file-ignores` 和 `extend-select`。
+
 ## 7. 开发环境与快速开始
 
 ### 7.1 硬件要求
@@ -1853,20 +1906,20 @@ cd pet-infra
 cp .env.example .env
 # 编辑 .env，填写必要的 API key 和路径
 
-# 3. 启动完整开发环境（含 Label Studio、wandb server、vLLM）
+# 3. 启动开发环境（含 Label Studio、wandb server）
 docker compose up -d
 
 # 服务启动后：
 # Label Studio:  http://localhost:8080
 # wandb server:  http://localhost:8888
-# vLLM (72B):    http://localhost:8000（需要 GPU）
+# vLLM (72B):    待定（取决于本地部署 vs 云端 API 决策）
 ```
 
 **单独启动某个服务：**
 ```bash
 docker compose up -d labelstudio      # 只启动 Label Studio
 docker compose up -d wandb            # 只启动 wandb
-docker compose up -d teacher          # 启动 72B 推理服务（需要 GPU）
+# docker compose up -d teacher        # 待定（vLLM 部署方案未确定）
 ```
 
 ### 7.3 克隆并初始化单个仓库
@@ -2067,7 +2120,7 @@ P95 延迟超标：
 | Prompt | v1.0 | pet-schema/versions/v1.0/ | 跟随 Schema |
 | LoRA 权重 | v1.0 | pet-train/outputs/ + pet-quantize/artifacts/ | 训练 + 评估通过 |
 | 音频模型 | v1.0 | pet-train/outputs/ + pet-quantize/artifacts/ | 同上 |
-| OTA 整包 | v1.0.0 | pet-ota/server/artifacts/ | 发布门控通过 |
+| OTA 整包 | v1.0.0 | pet-ota backend artifacts/ | 发布门控通过 |
 | 黄金集 | v1 | pet-eval/benchmark/ | PR + eval 负责人 approve |
 | 设备端事件库 Schema | v1 | 设备固件（Alembic 迁移管理） | 固件发布 |
 

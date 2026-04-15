@@ -47,9 +47,10 @@ pet-infra/
 │       └── docker-compose.yml
 ├── docker-compose.yml              # 根级一键启动
 ├── ci/
-│   └── templates/                  # CI workflow 模板
-│       ├── schema_guard.yml        # pet-schema 专用
-│       ├── standard_ci.yml         # 标准 lint+test
+│   └── workflows/                  # CI workflow 模板（各仓库复制到自己的 .github/workflows/）
+│       ├── schema_guard.yml        # pet-schema 专用：跨仓库 dispatch
+│       ├── standard_ci.yml         # 通用 lint+test（合并了 data_pipeline/annotation_check/train_eval）
+│       ├── quantize_validate.yml   # 需要真实设备，手动触发
 │       └── release_gate.yml        # 发布前检查
 ├── scripts/
 │   ├── setup_dev.sh                # 开发环境一键搭建
@@ -87,27 +88,41 @@ pet-infra/
 ### 3.3 `device.py` — 设备/后端检测
 
 - 检测顺序：CUDA → MPS → CPU
-- 额外支持 `"api"` 作为 inference backend（通过环境变量 `INFERENCE_BACKEND=api` 指定）
+- 额外支持 `"rknn"`（检测 `rknn_toolkit2`）和 `"api"` 作为 inference backend
+- 通过环境变量 `INFERENCE_BACKEND` 可强制指定（优先级高于自动检测）
 - 用法：`from pet_infra.device import detect_device`
-- 返回值：`"cuda"` / `"mps"` / `"cpu"` / `"api"`
+- 返回值：`"cuda"` / `"mps"` / `"cpu"` / `"rknn"` / `"api"`
+- 注：`"rknn"` 用于端侧推理（RK3576），训练/评估场景下通常为 cuda/mps/cpu
 
 ### 3.4 `store.py` — 数据库访问基类
 
-- 封装连接管理、事务、基本 CRUD 模式
-- 各仓库的 store.py 继承 `BaseStore`
+- 默认引擎：SQLite（通过 `sqlite3` stdlib）
+- 封装：连接管理（context manager）、事务（自动 commit/rollback）、基本 CRUD 模式
+- 各仓库的 store.py 继承 `BaseStore`，提供 db_path 参数
+- 与 Alembic 迁移集成：BaseStore 初始化时检查 migration 版本一致性
 - 用法：`from pet_infra.store import BaseStore`
 
 ### 3.5 `api_client.py` — 云端 Teacher API 封装
 
 - 统一接口：发送 prompt → 获取 teacher 回答（+ 可选 logprobs）
-- 集成 `standard_retry`（自动重试 + rate limit 处理）
-- 支持多种 backend（OpenAI 兼容 API、vLLM 本地 API）
+- 集成 `standard_retry`（自动重试 + HTTP 429 时尊重 `Retry-After` header）
+- 可配置并发数上限（默认 10），防止 rate limit 和成本失控
+- 支持多种 backend（OpenAI 兼容 API、vLLM 本地 API），通过统一接口切换
+- HTTP client 统一使用 `httpx`（异步支持、现代 API）。DEVELOPMENT_GUIDE 中 `requests` 示例需同步更新
 - 用法：`from pet_infra.api_client import TeacherClient`
+
+### 3.6 版本与公共 API
+
+- 版本定义在 `pyproject.toml` 的 `[project] version` 字段
+- `__init__.py` 导出 `__version__`，供 `check_deps.sh` 比对已安装版本与最新 tag
+- **向后兼容策略**：v1.x 不破坏已有公共 API；破坏性变更需 v2.0。公共 API 定义为五个模块的所有导出符号
 
 ### 包依赖
 
 - 必须依赖：`tenacity`
-- 可选依赖：`torch`（device.py）、`httpx`（api_client.py）
+- 可选依赖组 `[gpu]`：`torch`（device.py）
+- 可选依赖组 `[api]`：`httpx`（api_client.py）
+- 开发依赖组 `[dev]`：pytest、ruff、mypy（与 `shared/requirements-dev.txt` 保持一致，由 `pip-compile` 生成）
 - 不引入其他重依赖
 
 ## 4. 共享配置与同步机制
@@ -128,15 +143,17 @@ ignore_missing_imports = true
 ```
 
 **`Makefile.include`**：共享 `lint`、`clean`、`sync-infra` targets。`setup` 和 `test` 各仓库自定义。
+- 本地开发：`include ../pet-infra/shared/Makefile.include`（假设同级目录 checkout）
+- CI 环境：`sync_to_repo.sh` 会将 Makefile.include 复制到仓库根目录，CI 步骤先 clone pet-infra 再运行 sync
 
-**`requirements-dev.txt`**：pytest、ruff、mypy、tenacity 等共享开发依赖。
+**`requirements-dev.txt`**：由 `pip-compile` 从 `pyproject.toml` 的 `[dev]` extras 生成，保持与包定义一致。包含 pytest、ruff、mypy、tenacity 等。
 
-**`.env.example`**：全局环境变量模板（API keys、paths 等变量名，无实际值）。
+**`.env.example`**：全局跨仓库环境变量模板（DB paths、API endpoints 等）。各仓库的 `.env.example` 在此基础上追加仓库特有变量。
 
 ### 4.2 `sync_to_repo.sh`
 
 执行三件事：
-1. 将 `pyproject-base.toml` 中 ruff/mypy 配置合并到当前仓库的 `pyproject.toml`（只覆盖工具配置段）
+1. 将 `pyproject-base.toml` 中 ruff/mypy 配置合并到当前仓库的 `pyproject.toml`（使用 `tomli`/`tomli_w` 解析，只覆盖 `[tool.ruff]` 和 `[tool.mypy]` 段；仓库可在 `[tool.ruff.per-file-ignores]` 或 `extend-select` 中添加自定义规则，sync 不会触碰这些段）
 2. 检查 pet-schema 和 pet-infra 依赖是否落后最新 tag，输出警告
 3. 改动体现在 git diff 中，不自动 commit
 
@@ -168,13 +185,15 @@ ignore_missing_imports = true
 
 暂不构建。72B 模型本地部署方案未定（可能走云端 API 蒸馏），确定后以独立 PR 补充。
 
+> **与 DEVELOPMENT_GUIDE 的偏差**：DEVELOPMENT_GUIDE 5.8 节定义了 `docker/teacher/Dockerfile`，但实际开发中 teacher 部署方案尚未确定。本轮实现中将更新 DEVELOPMENT_GUIDE，将 teacher 相关部分标记为"待定——取决于本地部署 vs 云端 API 的最终决策"。
+
 ## 6. CI 工作流
 
 ### 6.1 策略
 
 - CI workflow 放在各自仓库的 `.github/workflows/`
-- pet-infra 的 `ci/templates/` 提供模板参考
-- 各仓库复制模板后按需调整
+- pet-infra 的 `ci/workflows/` 提供模板参考（各仓库复制到自己的 `.github/workflows/` 后按需调整）
+- DEVELOPMENT_GUIDE 原定 6 个独立 workflow，本设计合并为：`standard_ci.yml`（通用 lint+test，替代 data_pipeline/annotation_check/train_eval）+ `quantize_validate.yml`（需真实设备）+ `schema_guard.yml` + `release_gate.yml`。理由：各仓库 CI 步骤高度相似（lint→test），差异通过 params 和 pytest markers 区分，无需为每仓库单独维护 workflow
 - 设备自适应：检测 runner 有无 GPU，自动跳过 `@pytest.mark.gpu` 测试
 
 ### 6.2 模板
@@ -184,9 +203,14 @@ ignore_missing_imports = true
 - 动作：`repository_dispatch` 到所有下游仓库
 - 需要 `CROSS_REPO_TOKEN` secret
 
-**`standard_ci.yml`**（各仓库通用）：
+**`standard_ci.yml`**（各仓库通用，合并了原 data_pipeline/annotation_check/train_eval）：
 - 触发：push to dev/main, PR to dev/main, repository_dispatch
 - 步骤：checkout → setup Python 3.11 → install deps → ruff → mypy → pytest
+- 特殊逻辑：pet-train 完成后可通过 `repository_dispatch` 自动触发 pet-eval CI
+
+**`quantize_validate.yml`**（pet-quantize 专用）：
+- 手动触发（workflow_dispatch），需要真实 RK3576 设备的 self-hosted runner
+- 延迟测试、模型精度验证
 
 **`release_gate.yml`**（发布前检查）：
 - 手动触发（workflow_dispatch）
@@ -237,12 +261,22 @@ ignore_missing_imports = true
 - Secret 轮换流程（90 天周期）
 - 紧急回滚步骤
 
-### 8.3 `DEVELOPMENT_GUIDE.md` 更新
+### 8.3 测试策略（pet-infra 自身）
+
+- `tests/test_logging.py`：验证 JSONFormatter 输出格式、字段完整性
+- `tests/test_retry.py`：mock 外部调用，验证重试次数和退避行为
+- `tests/test_device.py`：mock torch 可用性，验证检测逻辑各分支
+- `tests/test_store.py`：使用内存 SQLite（`:memory:`），验证 CRUD 和事务
+- `tests/test_api_client.py`：mock HTTP 响应，验证重试、429 处理、并发限制
+- CI 中不需要 GPU，所有测试通过 mock 覆盖
+
+### 8.4 `DEVELOPMENT_GUIDE.md` 更新
 
 - 补充 pet-infra 包使用说明
 - 补充 `make sync-infra` 流程
 - 更新 pet-infra 目录结构
 - Teacher/vLLM 部分标记为"待定"
+- HTTP client 示例从 `requests` 统一为 `httpx`
 
 ## 9. 全链路接入
 
@@ -286,8 +320,16 @@ ignore_missing_imports = true
 3. pet-data ~ pet-ota 逐个接入 → 各自 minor bump
 4. 全链路验证：改 pet-schema → 观察 dispatch 触发下游 CI
 
+### 9.3 全链路依赖安装方式
+
+- 本地开发：`pip install -e ../pet-infra`（可编辑安装）
+- CI / 正式依赖：`pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra.git@v1.0.0`
+
 ## 11. 优先级
 
-1. **Onboarding 优先**：Docker dev 环境、setup_dev.sh、onboarding.md 先行
-2. **CI 跟进**：schema_guard + standard_ci 模板
-3. **Teacher 待定**：72B 本地部署 vs 云端 API 确定后再建
+1. **Python 包优先**：`src/pet_infra/` 五个模块，所有仓库的基础依赖
+2. **Onboarding 环境**：Docker dev 环境、setup_dev.sh、onboarding.md
+3. **共享配置与同步**：shared/ 目录 + sync_to_repo.sh + check_deps.sh
+4. **CI 模板**：schema_guard + standard_ci + quantize_validate + release_gate
+5. **全链路接入**：各仓库替换自建代码、加 CI workflow
+6. **Teacher 待定**：72B 本地部署 vs 云端 API 确定后再建

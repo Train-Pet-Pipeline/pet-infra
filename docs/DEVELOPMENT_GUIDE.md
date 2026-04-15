@@ -1567,22 +1567,41 @@ TOLERANCE = 0.05  # 比例偏差超过 5% 则拒绝继续量化
 
 ```
 pet-ota/
-├── server/
-│   ├── docker-compose.yml
-│   ├── mender.env                 # 不提交，.env.example 示意
-│   └── nginx.conf                 # 强制 HTTPS
-├── packaging/
-│   ├── make_delta.sh              # bsdiff 差分打包
-│   ├── upload_artifact.py
-│   └── create_deployment.py      # 指定设备组，不硬编码设备 ID
-├── release/
-│   ├── check_gate.py              # 发布门控（见下方）
-│   ├── canary_rollout.py          # 5% → 观察 48h → 100%
-│   └── rollback.py                # 5 分钟内触发回滚
-└── monitoring/
-    ├── check_update_rate.py       # 成功率监控
-    └── alert.py                   # 失败率超阈值告警
+├── src/pet_ota/
+│   ├── __init__.py
+│   ├── config.py                  # Pydantic params loader + JSON logging
+│   ├── backend/
+│   │   ├── __init__.py
+│   │   ├── base.py                # OTABackend Protocol + DeploymentStatus model
+│   │   └── local.py               # LocalBackend — filesystem implementation
+│   ├── packaging/
+│   │   ├── __init__.py
+│   │   ├── make_delta.py          # bsdiff4 delta packaging
+│   │   ├── upload_artifact.py     # Upload artifact to backend
+│   │   └── create_deployment.py   # Create deployment for device group
+│   ├── release/
+│   │   ├── __init__.py
+│   │   ├── check_gate.py          # 5 gate checks（见下方）
+│   │   ├── canary_rollout.py      # 5%→48h→100% canary logic + state machine
+│   │   └── rollback.py            # Rollback to last known good version
+│   └── monitoring/
+│       ├── __init__.py
+│       ├── check_update_rate.py   # 成功率监控
+│       └── alert.py               # CRITICAL log alerts
+├── tests/
+├── params.yaml
+├── Makefile
+└── pyproject.toml
 ```
+
+**v1 实现偏差说明：**
+
+| 原规划 | 实际实现 | 原因 |
+|---|---|---|
+| `make_delta.sh`（bsdiff） | `make_delta.py`（bsdiff4） | 纯 Python，无系统依赖，测试友好 |
+| `server/`（docker-compose + Mender） | `backend/`（Protocol + LocalBackend） | v1 不需要 Mender 实例，抽象接口保留未来集成 |
+| `mender.env`、`nginx.conf` | v1 不包含 | 真实 Mender 部署时再添加 |
+| Gate checks 查询外部数据源 | `gate_overrides` 注入（via params.yaml） | 跨仓库 gate 是 CI 层面的关注点 |
 
 **发布门控（`check_gate.py`，任一失败则终止发布）：**
 
@@ -2067,7 +2086,7 @@ P95 延迟超标：
 | Prompt | v1.0 | pet-schema/versions/v1.0/ | 跟随 Schema |
 | LoRA 权重 | v1.0 | pet-train/outputs/ + pet-quantize/artifacts/ | 训练 + 评估通过 |
 | 音频模型 | v1.0 | pet-train/outputs/ + pet-quantize/artifacts/ | 同上 |
-| OTA 整包 | v1.0.0 | pet-ota/server/artifacts/ | 发布门控通过 |
+| OTA 整包 | v1.0.0 | pet-ota backend artifacts/ | 发布门控通过 |
 | 黄金集 | v1 | pet-eval/benchmark/ | PR + eval 负责人 approve |
 | 设备端事件库 Schema | v1 | 设备固件（Alembic 迁移管理） | 固件发布 |
 

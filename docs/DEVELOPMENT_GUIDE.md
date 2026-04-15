@@ -663,6 +663,8 @@ def _extra_validations(data: dict) -> list[str]:
 
 **发布门控指标（所有指标均为强制通过，不达标不发布）：**
 
+**VLM 门控指标：**
+
 | 指标 | 计算方式 | 目标值 |
 |---|---|---|
 | Schema 合规率 | jsonschema + 代码层验证通过率 | >99% |
@@ -673,6 +675,16 @@ def _extra_validations(data: dict) -> list[str]:
 | narrative BERTScore | 中文 BERT | >0.80 |
 | P95 推理延迟 | 真实 RK3576 设备实测 | <4s |
 | 量化 KL 散度 | W8A8 vs FP16 | <0.02 |
+| ECE（Expected Calibration Error） | 校准误差，按置信区间分桶计算 | 仅观测，不门控 |
+
+> 注：calibration ECE 为信息性指标，记录到 wandb 但不参与门控判定（threshold=None）。
+
+**音频 CNN 门控指标（初期宽松，后续根据数据调整）：**
+
+| 指标 | 计算方式 | 目标值 |
+|---|---|---|
+| 音频分类准确率 | 宏平均准确率 | >0.80 |
+| 呕吐召回率 | "vomiting" 类召回率（安全关键） | >0.70 |
 
 ## 4. 数据策略
 
@@ -1352,32 +1364,95 @@ compute_topk_kl_loss(student_logits, teacher_token_ids, teacher_logprobs, temper
 ### 5.5 `pet-eval`
 
 > 评估管线，独立仓库，被 `pet-train` 和 `pet-quantize` 共同调用。
+> 采用 `src/` 布局（与 pet-schema、pet-data、pet-annotation、pet-train 一致）。
 
 ```
 pet-eval/
-├── metrics/
-│   ├── schema_compliance.py       # Schema 合规率（jsonschema + 代码层）
-│   ├── calibration.py             # ECE（Expected Calibration Error）
-│   ├── anomaly_recall.py          # 召回率和误报率
-│   ├── mood_correlation.py        # Spearman 相关（vs 72B 老师）
-│   ├── narrative_quality.py       # BERTScore（中文 BERT）
-│   ├── latency.py                 # 延迟（必须在真实设备上运行）
-│   └── kl_quantization.py        # 量化精度损失
+├── src/pet_eval/
+│   ├── __init__.py
+│   ├── __main__.py                    # python -m pet_eval 入口
+│   ├── cli.py                         # 统一 CLI，三个子命令
+│   ├── logging_setup.py               # 共享结构化 JSON 日志配置
+│   ├── metrics/
+│   │   ├── __init__.py                # 公开导出所有 compute_* 函数
+│   │   ├── types.py                   # MetricResult 冻结数据类
+│   │   ├── schema_compliance.py       # Schema 合规率（jsonschema + 代码层）
+│   │   ├── calibration.py             # ECE（仅观测，不门控）
+│   │   ├── anomaly_recall.py          # 召回率和误报率
+│   │   ├── mood_correlation.py        # Spearman 相关（vs 72B 老师）
+│   │   ├── narrative_quality.py       # BERTScore（中文 BERT）
+│   │   ├── latency.py                 # P50/P95/P99 延迟统计（纯计算）
+│   │   ├── kl_quantization.py         # 量化精度损失 KL(fp16 || quant)
+│   │   └── audio_accuracy.py          # 音频 CNN：逐类 P/R/F1 + 混淆矩阵
+│   ├── gate/
+│   │   ├── __init__.py
+│   │   ├── types.py                   # GateResult 冻结数据类
+│   │   └── checker.py                 # 门控逻辑，读 params.yaml 阈值
+│   ├── runners/
+│   │   ├── __init__.py
+│   │   ├── eval_trained.py            # 评估训练后 FP16 模型
+│   │   ├── eval_quantized.py          # 量化模型评估（支持有/无设备双模式）
+│   │   └── eval_audio.py              # 音频 CNN 评估
+│   └── report/
+│       ├── __init__.py
+│       └── generate_report.py         # 结果写入 wandb（tenacity 重试）
 ├── tasks/
-│   └── pet_feeder.py              # lm-evaluation-harness 自定义 task
+│   └── pet_feeder.py                  # lm-evaluation-harness 自定义 task（可选）
 ├── benchmark/
-│   ├── gold_set_v1.jsonl          # 黄金集，只增不改（见下方格式）
-│   └── anomaly_set_v1.jsonl       # 异常检测专用（必须含真实异常样本）
-├── runners/
-│   ├── eval_trained.py            # 评估训练后 FP16 模型
-│   ├── eval_quantized.py          # ADB 连接真实设备评估
-│   └── eval_audio.py
-└── report/
-    └── generate_report.py         # 结果写入 wandb，关联训练 run_id
-补上vendor/，放lm-evaluation-harness源码
+│   ├── README.md                      # 黄金集格式 + 准入规则
+│   ├── gold_set_v1.jsonl              # 黄金集，只增不改（见下方格式）
+│   └── anomaly_set_v1.jsonl           # 异常检测专用（必须含真实异常样本）
+├── vendor/
+│   └── lm-evaluation-harness/         # git submodule（浅克隆）
+├── tests/
+├── params.yaml
+├── pyproject.toml
+└── Makefile
 ```
 
-注意在vendor/放lm-evaluation-harness源码
+**eval_quantized 双模式：**
+- 无 `--device_id`：GPU/CPU 模拟推理，跳过延迟测量（标记 skipped 而非 failed）
+- 有 `--device_id`：ADB 推送到 RK3576，实测 P95 延迟，完整门控
+
+**params.yaml 结构：**
+
+```yaml
+gates:
+  vlm:
+    schema_compliance: 0.99
+    distribution_sum_error: 0.01
+    anomaly_recall: 0.85
+    anomaly_false_positive: 0.15
+    mood_spearman: 0.75
+    narrative_bertscore: 0.80
+    latency_p95_ms: 4000
+    kl_divergence: 0.02
+  audio:
+    overall_accuracy: 0.80
+    vomit_recall: 0.70
+
+benchmark:
+  gold_set_path: "benchmark/gold_set_v1.jsonl"
+  anomaly_set_path: "benchmark/anomaly_set_v1.jsonl"
+  audio_test_dir: ""
+
+wandb:
+  project: "pet-eval"
+  entity: ""
+
+inference:
+  schema_version: "1.0"
+  max_new_tokens: 1024
+  batch_size: 1
+
+audio:
+  classes: [eating, drinking, vomiting, ambient, other]
+
+device:
+  adb_timeout: 30
+  warmup_runs: 3
+  latency_runs: 50
+```
 
 **黄金集格式（`gold_set_v1.jsonl`，每行一个 JSON）：**
 

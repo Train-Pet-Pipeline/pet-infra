@@ -7,23 +7,39 @@ services:
       - DJANGO_DB=default
       - POSTGRE_NAME=labelstudio
       - POSTGRE_USER=labelstudio
-      - POSTGRE_PASSWORD=labelstudio
+      - POSTGRE_PASSWORD=${LABEL_STUDIO_DB_PASSWORD:-labelstudio}
       - POSTGRE_HOST=labelstudio-db
       - POSTGRE_PORT=5432
+      - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
+      - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/data
     volumes:
       - labelstudio-data:/label-studio/data
+      - pet-data:/data:ro
     depends_on:
-      - labelstudio-db
+      labelstudio-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   labelstudio-db:
     image: postgres:16-alpine
     environment:
       - POSTGRES_DB=labelstudio
       - POSTGRES_USER=labelstudio
-      - POSTGRES_PASSWORD=labelstudio
+      - POSTGRES_PASSWORD=${LABEL_STUDIO_DB_PASSWORD:-labelstudio}
     volumes:
       - labelstudio-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U labelstudio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   labelstudio-data:
   labelstudio-pg:
+  pet-data:

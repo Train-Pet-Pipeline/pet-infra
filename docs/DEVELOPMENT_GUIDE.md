@@ -1174,19 +1174,19 @@ pet-annotation/
 │   │   └── cost_tracker.py        # token 用量追踪，防费用失控
 │   ├── quality/
 │   │   ├── auto_check.py          # schema 验证 + 置信度 + 采样 → 审核路由
-│   │   ├── llm_judge.py           # LLM-as-Judge 一致性检查（stub）
+│   │   ├── llm_judge.py           # LLM-as-Judge 一致性检查（primary vs comparison 交叉校验）
 │   │   └── sampling.py            # 置信度抽样策略
 │   ├── human_review/
-│   │   ├── import_to_ls.py        # VLM 输出 → Label Studio task（stub）
-│   │   └── export_from_ls.py      # Label Studio 审核结果 → 数据库（stub）
+│   │   ├── import_to_ls.py        # VLM 输出 → Label Studio task（REST API 集成）
+│   │   └── export_from_ls.py      # Label Studio 审核结果 → 数据库（approve/reject/correct + DPO 对生成）
 │   ├── dpo/
 │   │   ├── generate_pairs.py      # primary vs secondary 模型配对
-│   │   ├── import_app_feedback.py # APP 用户纠错 → Label Studio（stub）
+│   │   ├── import_app_feedback.py # APP 用户纠错 → Label Studio（post-launch，依赖云同步）
 │   │   └── validate_pairs.py      # DPO 对合法性验证（5 规则）
 │   └── export/
 │       ├── to_sharegpt.py         # 导出 SFT 训练格式（见 §4.5）
-│       ├── to_dpo_pairs.py        # 导出 DPO 格式（见 §4.5）
-│       └── to_audio_labels.py     # 音频分类标签导出（stub）
+│       ├── to_dpo_pairs.py        # 导出 DPO 格式（LLaMA-Factory ShareGPT DPO 标准格式）
+│       └── to_audio_labels.py     # 音频分类标签导出（post-launch）
 ├── migrations/
 │   └── 001_create_annotation_tables.sql
 ├── tests/                         # 51 tests
@@ -1703,8 +1703,10 @@ pet-schema: git+URL 安装，固定到版本 tag，不用 @main
 ```
 
 pet-infra: 同样通过 git+URL 安装，固定到版本 tag
-  - 本地开发: pip install -e ../pet-infra
-  - CI: pip install "pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra.git@v1.0.0"
+  - 本地开发: python -m pip install -e ../pet-infra
+  - CI: python -m pip install "pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra.git@v1.0.0"
+
+**重要**: 所有 pip 操作必须使用 `python -m pip` 而非裸 `pip`，确保 pip 与当前 Python 解释器一致（避免 conda env 中 PATH 导致的版本不匹配）。
 
 ### 6.2 代码风格
 
@@ -1909,10 +1911,13 @@ cp .env.example .env
 # 3. 启动开发环境（含 Label Studio、wandb server）
 docker compose up -d
 
-# 服务启动后：
+# 服务启动后（带健康检查，PostgreSQL 就绪后 Label Studio 才启动）：
 # Label Studio:  http://localhost:8080
-# wandb server:  http://localhost:8888
+# wandb server:  http://localhost:8081
 # vLLM (72B):    待定（取决于本地部署 vs 云端 API 决策）
+
+# 4. 初始化 Label Studio（首次使用时执行，自动创建用户/项目/API key）
+bash scripts/init_labelstudio.sh
 ```
 
 **单独启动某个服务：**

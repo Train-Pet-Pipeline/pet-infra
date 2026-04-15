@@ -1415,6 +1415,10 @@ pet-quantize/
 ├── calibration/
 │   ├── build_calib_dataset.py     # 按分布采样 200 帧（必须满足比例约束）
 │   └── validate_calib.py          # 强制检查分布覆盖是否达标
+├── inference/
+│   ├── rknn_runner.py             # RKNN SDK 推理封装（真机/模拟双模式）
+│   ├── rkllm_runner.py            # RKLLM SDK 推理封装
+│   └── pipeline.py                # VLM 推理管线，供 pet-eval 调用
 ├── validate/
 │   ├── test_schema_compliance.py
 │   ├── test_kl_divergence.py

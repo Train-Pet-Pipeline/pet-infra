@@ -1,0 +1,17 @@
+# pet-infra configuration
+logging:
+  default_level: "INFO"
+
+retry:
+  max_attempts: 3
+  wait_min: 2
+  wait_max: 30
+  multiplier: 1
+
+api_client:
+  default_concurrency: 10
+  default_timeout: 60
+
+store:
+  pragma_journal_mode: "wal"
+  pragma_foreign_keys: true

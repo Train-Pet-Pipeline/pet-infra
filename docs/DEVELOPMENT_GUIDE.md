@@ -1785,16 +1785,23 @@ logger.info("frame_annotated", extra={
 })
 ```
 
-### 6.5 分支策略与 PR 流程
+### 6.5 分支策略与 PR 流程（所有仓库统一执行，无例外）
 
 ```
-main        ← 保护分支，不允许直接推送，所有变更通过 PR
+main        ← 保护分支，始终可发布，不允许直接推送
   ↑
-dev         ← 日常开发集成分支，每周 merge 到 main（如果 CI 通过）
+dev         ← 日常开发集成分支，所有 feature/fix PR 的唯一目标分支
   ↑
 feature/*   ← 功能分支，从 dev 切出，完成后 PR 回 dev
-fix/*        ← Bug 修复，可直接从 main 切出，fix 后 PR 回 main（紧急修复）
+fix/*       ← Bug 修复分支，从 dev 切出，完成后 PR 回 dev
 ```
+
+**核心规则：**
+1. **feature/* / fix/* → dev**：所有开发 PR 的目标分支必须是 `dev`，禁止直接 PR 到 main
+2. **dev → main**：阶段性工作完成后（每批 feature merge 到 dev 后），及时提 `dev → main` PR 并 merge
+3. **禁止直接 push**：dev 和 main 均不允许直接 push（初始化阶段除外）
+4. **8 个仓库统一流程**：不允许任何仓库使用不同的分支策略
+5. **紧急热修复**：仅限线上事故时，可从 main 切 `hotfix/*`，修复后同时 PR 到 main 和 dev
 
 **PR 要求（所有仓库一致）：**
 - PR title 格式：`[feat|fix|refactor|test|docs] 简要说明`

@@ -1344,7 +1344,7 @@ report_to: wandb
 - **Full-vocab KL**（`FileLogitsProvider`）：本地离线推理获取完整 logit 向量，精确 KL 散度
 - **Top-k 近似 KL**（`APILogitsProvider`）：API 返回 top-k logprobs，rest bucket 合并剩余概率
 
-默认 `label_smoothing_factor=0.1` 作为零成本软化，KL 蒸馏在有 logits 时叠加使用。
+默认 `label_smoothing_factor=0.0`（VLM 大词表 ~152K 下 label_smoothing > 0 会触发全词表 log_softmax，导致显存爆炸）。KL 蒸馏在有 logits 时叠加使用。
 
 ```python
 # Full-vocab KL（本地教师模型）
@@ -1388,9 +1388,12 @@ pet-eval/
 │   │   ├── __init__.py
 │   │   ├── types.py                   # GateResult 冻结数据类
 │   │   └── checker.py                 # 门控逻辑，读 params.yaml 阈值
+│   ├── inference/
+│   │   ├── __init__.py
+│   │   └── constrained.py             # outlines JSON Schema 约束解码
 │   ├── runners/
 │   │   ├── __init__.py
-│   │   ├── eval_trained.py            # 评估训练后 FP16 模型
+│   │   ├── eval_trained.py            # 评估训练后 FP16 模型（含重试/兜底/约束解码）
 │   │   ├── eval_quantized.py          # 量化模型评估（支持有/无设备双模式）
 │   │   └── eval_audio.py              # 音频 CNN 评估
 │   └── report/
@@ -1444,6 +1447,12 @@ inference:
   schema_version: "1.0"
   max_new_tokens: 1024
   batch_size: 1
+  temperature: 0.1            # 采样温度 (do_sample=true 时生效)
+  top_p: 0.9                  # nucleus sampling
+  do_sample: true             # false 则用 greedy decoding
+  retry_on_failure: true      # 输出不合规时用 retry_temperature 重试一次
+  retry_temperature: 0.7      # 重试时使用的更高温度
+  constrained_decoding: false # 启用后用 outlines 库做 JSON Schema 约束采样
 
 audio:
   classes: [eating, drinking, vomiting, ambient, other]
@@ -1453,6 +1462,11 @@ device:
   warmup_runs: 3
   latency_runs: 50
 ```
+
+**推理容错机制：**
+- `retry_on_failure=true` 时，VLM 输出不通过 Schema 验证会用更高 temperature 重试一次
+- 重试仍失败则返回安全兜底 JSON（`action.primary="other"`, `species="unknown"`）
+- `constrained_decoding=true` 时使用 `outlines` 库在 token 采样层强制输出符合 JSON Schema，保证 100% 合规（需要 `pip install pet-eval[constrained]`）
 
 **黄金集格式（`gold_set_v1.jsonl`，每行一个 JSON）：**
 

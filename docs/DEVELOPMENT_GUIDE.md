@@ -17,7 +17,8 @@
 7. [开发环境与快速开始](#7-开发环境与快速开始)
 8. [Claude Code 开发指引](#8-claude-code-开发指引)
 9. [Phase 1 Foundation 运行时（pet-infra 2.0.0）](#9-phase-1-foundation-运行时pet-infra-200)
-10. [附录：版本管理、风险、术语表](#10-附录)
+10. [Phase 2 Data & Annotation 运行时（pet-data 1.1.0, pet-annotation 1.1.0）](#10-phase-2-data--annotation-运行时pet-data-110-pet-annotation-110)
+11. [附录：版本管理、风险、术语表](#11-附录)
 
 ---
 
@@ -2310,9 +2311,69 @@ CI 时 schema-validation.yml 验证矩阵完整性。
 
 ---
 
-## 10. 附录
+## 10. Phase 2 Data & Annotation 运行时（pet-data 1.1.0, pet-annotation 1.1.0）
 
-### 10.1 版本管理总表
+Phase 2 在 Phase 1 Foundation 之上把 `pet-data` 和 `pet-annotation` 接入插件体系，并引入 modality 维度，使数据契约（`pet_schema.samples.Sample` / `pet_schema.annotations.Annotation`）在视觉与音频两条路径上对等。
+
+### 10.1 Modality 判别字段
+
+所有 Sample / Annotation 载荷都带 `modality` 字段（`Literal["vision", "audio", "sensor", "multimodal"]`）。Pydantic v2 discriminated union 以它为判别键，消费方 `pet_schema.samples.Sample` / `pet_schema.annotations.Annotation` 在反序列化时自动路由到正确的子类（`VisionSample` / `AudioSample` / `VisionAnnotation` / `AudioAnnotation`）。
+
+新数据入库必须显式写 `modality`（pet-data 的 `sources/base.py` 默认注入 `vision`；pet-annotation 的 DB 迁移 002 给老数据回填 `vision`）。老代码读出的 row 若缺 `modality` 字段走默认（`vision`），消费方可直接 `.model_validate(row)`。
+
+### 10.2 Storage scheme 与 `storage_uri`
+
+每个 `BaseSample.storage_uri` 经 `pet_infra.storage.STORAGE` 注册表解析。Phase 1 只实现 `local://`；S3 / WebDataset 属于 Phase 3+ YAGNI 范围（spec §7.9）。pet-data / pet-annotation 的 row 侧都已补 `storage_uri TEXT NOT NULL DEFAULT ''`，迁移会在已有行基础上按 `data_root + frame_path` 回填 `local://` URI。
+
+### 10.3 Phase 2 注册的 dataset 插件
+
+| Registry key                           | 来源仓库         | 产出 Pydantic 类型 |
+|----------------------------------------|------------------|--------------------|
+| `pet_data.vision_frames`               | pet-data         | `VisionSample`     |
+| `pet_data.audio_clips`                 | pet-data         | `AudioSample`      |
+| `pet_annotation.vision_annotations`    | pet-annotation   | `VisionAnnotation` |
+| `pet_annotation.audio_annotations`     | pet-annotation   | `AudioAnnotation`  |
+
+查询时使用 `DATASETS.module_dict[key]` 直接取（mmengine-lite 的 `.get()` 会把 `.` 解析成 `scope.module`，对 flat-dotted key 返回 `None`）。
+
+入口函数统一为 `register_all`，各仓库用 `[project.entry-points."pet_infra.plugins"]` 声明 targets；`pet_infra.plugins.discover_plugins()` 会在第一次调用时触发 import 链，把所有插件登记到六个 registry。
+
+### 10.4 Label Studio 模板按 modality dispatch
+
+`pet_annotation.human_review.templates.template_for(modality)` 读取 `templates/<modality>.xml`，目前提供 `vision.xml` 与 `audio.xml`。新增模态先在 `templates/` 下放 XML，再更新 `template_for` 支持；**严禁**把 XML 硬编码回 `import_to_ls.py`。`import_to_ls(..., modality=...)` 为唯一入口。
+
+### 10.5 Phase 2 迁移模式：FrameRecord 保留内部列，导出 VisionSample
+
+pet-data 的 `FrameRecord` dataclass 仍然持有 pet-data 域内列（`phash`, `quality_flag`, `anomaly_score`, `annotation_status` 等）—— 这些是 pet-data 本仓库的内部状态，不暴露给下游。**对外公共契约**由 `storage.adapter.frame_row_to_vision_sample(row)` 产出 `pet_schema.VisionSample`。
+
+下游消费方（pet-train、pet-annotation、pet-eval）只能依赖 `VisionSample` / `AudioSample` / `*Annotation`，禁止 `from pet_data.storage.store import FrameRecord` 这样的跨仓内部类型引用。对应地，pet-annotation 也拆了 `VisionAnnotationRow` / `AudioAnnotationRow`，row→pydantic 由 `pet_annotation.adapter` 完成。
+
+### 10.6 迁移基础设施：保持手写、不引入 Alembic
+
+pet-data 使用手写 Python 迁移（`src/pet_data/storage/migrations/NNN_*.py`），pet-annotation 使用 SQL 文件（`migrations/NNN_*.sql`）。两者都追加式（新文件只增不改）—— 已提交的迁移文件是不可变的（CLAUDE.md）。Phase 2 新增：
+
+- pet-data：`002_add_modality_storage_uri.py`（为 `frames` 补 `modality` / `storage_uri` / `frame_width` / `frame_height` / `brightness_score`），`003_add_audio_samples.py`（新建 `audio_samples` + `audio_annotations` 占位表）
+- pet-annotation：`002_add_modality.sql`（为 `annotations` / `model_comparisons` 补 `modality` 和 `storage_uri`），`003_create_audio_annotations.sql`（新建 `audio_annotations` 表，带 `CHECK(modality='audio')`）
+
+Spec §7.3 原本提到 "Alembic 迁移"，但两仓从 v1 起就使用上述手写方案，Phase 2 保留现状（YAGNI）。后续若要引入 Alembic，须作为独立基础设施项目单独排期。
+
+### 10.7 Phase 2 smoke recipe
+
+`pet-infra/recipes/pet_data_ingest_smoke.yaml` 是跨仓 smoke，通过 `ref_type: dataset / ref_value: pet_data.vision_frames` 证明 dataset 插件分发可用，以 `pet_infra.noop_evaluator` 作为不做真正计算的 stage component 让 `preflight` 通过。CI 侧 `plugin-discovery.yml` 会安装 `pet-data@v1.1.0` + `pet-annotation@v1.1.0` 并断言 4 个 Phase 2 dataset key 全部到位。
+
+真实跨仓执行（`pet run --recipe …` 非 dry-run）延后到 Phase 3 —— 届时 pet-train 的 trainer 插件落地。
+
+### 10.8 音频路径的当前边界（Phase 2 内已知限制）
+
+- pet-annotation 的 audio 导出仅 JSONL（`to_audio_labels`），无 ShareGPT / DPO 生成器。
+- `generate_cross_model_pairs(modality="audio")` 主动抛 `NotImplementedError`（spec §7.9 YAGNI）。
+- `pet_annotation.import_to_ls(modality="audio")`、`pet annotate --modality=audio`、`pet check --modality=audio` 也都 `NotImplementedError`；真正的音频人审走 Phase 3。
+
+---
+
+## 11. 附录
+
+### 11.1 版本管理总表
 
 | 组件 | 当前版本 | 存放位置 | 变更流程 |
 |---|---|---|---|
@@ -2324,7 +2385,7 @@ CI 时 schema-validation.yml 验证矩阵完整性。
 | 黄金集 | v1 | pet-eval/benchmark/ | PR + eval 负责人 approve |
 | 设备端事件库 Schema | v1 | 设备固件（Alembic 迁移管理） | 固件发布 |
 
-### 10.2 已知限制与风险
+### 11.2 已知限制与风险
 
 | 风险 | 描述 | 缓解措施 |
 |---|---|---|
@@ -2336,7 +2397,7 @@ CI 时 schema-validation.yml 验证矩阵完整性。
 | 多宠识别混淆 | 体型相近的猫咪 id_tag 可能混淆 | 依赖 id_confidence 字段，低置信度事件单独处理 |
 | 固件白名单被绕过 | 应用层 bug 尝试上传原始视频 | 固件层（不是应用层）拦截，需固件安全审计 |
 
-### 10.3 术语表
+### 11.3 术语表
 
 | 术语 | 含义 |
 |---|---|
@@ -2359,7 +2420,7 @@ CI 时 schema-validation.yml 验证矩阵完整性。
 | 感知哈希 | pHash（Perceptual Hash），用于检测相似图像的去重算法 |
 | ECE | Expected Calibration Error，模型置信度校准误差 |
 
-### 10.4 外部依赖版本锁定表
+### 11.4 外部依赖版本锁定表
 
 在各仓库 `requirements.txt` 中需要固定以下关键依赖的主版本：
 
@@ -2375,7 +2436,7 @@ CI 时 schema-validation.yml 验证矩阵完整性。
 | `wandb` | `>=0.16,<1.0` | 稳定 API |
 | `torch` | `==2.x.y`（固定 patch） | CUDA 兼容性 |
 
-### 10.5 快速参考：关键阈值
+### 11.5 快速参考：关键阈值
 
 所有阈值的权威来源是各仓库的 `params.yaml`，此处仅作参考：
 

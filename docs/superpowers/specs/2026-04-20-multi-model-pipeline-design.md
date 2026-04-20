@@ -34,6 +34,33 @@ Train-Pet-Pipeline 目前已经上线 v1（2026-04-15 完成全链 E2E 集成测
 3. **配置驱动、类型安全、记录清晰**：Hydra 组合配置，Pydantic（pet-schema）校验，ClearML 统一可视化，DVC 保证离线可复现。
 4. **工程性**：fail-fast preflight、幂等重试、跨仓 CI 验证、版本治理。
 
+### 0.2.1 North Star —— 所有决策的唯一标尺
+
+**每一个实现决策都要回答同一个问题：这让以下场景更容易，还是更难？**
+
+| 未来场景 | 期望的实现路径 | 反面教材（不该出现的路径） |
+|---|---|---|
+| 新增模型家族（VLM-v3、化学传感器 CNN） | 写 plugin + 写 recipe，**infra 零改动** | 改 ABC / 改 registry / 改 schema 结构 |
+| 新增 modality（嗅觉、生理信号） | 加 `Modality` enum 值 + 写对应 Sample/Annotation Pydantic 子类 + 写 plugin，**schema 表结构零变更** | 新增 `OlfactoryAnnotationRow` 表 / 新增 migration / 改 adapter 分支 |
+| 新增只预训练的模型（只 pretrain，不 fine-tune） | recipe 只声明 pretrain stage，后续 capability 自动跳过 | 加 if/else 判断某模型是否走 finetune |
+| 模型架构消融（Qwen2-VL vs. InternVL） | `pet run recipe=vlm_sft -m trainer=qwen,internvl` 一条命令 | 复制 recipe / 改 hardcode / 改 CLI |
+| 模型间对比（VLM vs. Audio CNN） | 同一 recipe 改 `trainer._target_` | 走两条独立 CLI |
+| **业务侧多模型综合判断**（生产推理时 VLM + Audio 等多模型输出联合决策） | fusion plugin 注册进 EVALUATORS，recipe 声明 `fusion._target_`；多策略（`single_modal` / `and_gate` / `weighted` / `learned_fusion`）可互换 | 在应用代码或网关里 hard-code 多模型调用与合并逻辑 |
+| 模型间交叉监督（训练时一个模型产弱标喂另一个） | recipe 串 stage：`vlm_infer → audio_weak_label → audio_train` | 手工中间脚本串流 |
+| 跨模态融合消融扫描 | `pet run recipe=prod -m fusion=vlm_only,audio_only,and_gate,weighted` 一条命令 | 复制 4 份 recipe |
+
+**核心断言**：**capability 边界稳定 + 数据契约可扩展 + recipe 声明组合 = 新实验不需要写新 infra。**
+
+**决策反模式清单**（违反 North Star 的常见陷阱）：
+- ❌ 把 modality/model 差异写进表 schema 或文件结构 → 新 modality 要改 schema
+- ❌ 下游 repo 硬 pin 上游 exact git tag → compatibility_matrix 失去治理权，上游无法自由演进
+- ❌ 在 infra 代码里 `if modality == "vision": ... elif "audio": ...` → 新 modality 要改 infra
+- ❌ 为"跳过 stage"特判，而不是提供 noop/fallback plugin → capability 抽象被破坏
+- ❌ 默认 required 的消融相关参数 → 每次做对比实验都要显式声明，阻碍扫描
+- ❌ 复制 recipe 代替参数化 → 配置漂移、对比实验不可信
+
+**每个 Phase 的 DoD 必须包含这一条自检**：回看本 Phase 引入的新类/新表/新字段/新 CLI，问"下一个 modality/下一个模型家族出现时，这会不会变成必改点？"如果答案是"会"，立即重构为 plugin/discriminator/recipe。
+
 ### 0.3 调研依据
 
 #### 现有管线审计（决策依据）

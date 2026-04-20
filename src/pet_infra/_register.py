@@ -8,4 +8,7 @@ def register_all() -> None:
     Imports every first-party plugin module so @register_module side-effects
     populate the registries before pet-infra hands control to the caller.
     """
+    from pet_infra.hydra_plugins.structured import register as _register_hydra
     from pet_infra.storage import local  # noqa: F401
+
+    _register_hydra()

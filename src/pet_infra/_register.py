@@ -13,9 +13,12 @@ def register_all() -> None:
     directly), skip re-importing to avoid KeyError from mmengine's Registry.
     """
     from pet_infra.hydra_plugins.structured import register as _register_hydra
-    from pet_infra.registry import STORAGE
+    from pet_infra.registry import EVALUATORS, STORAGE
 
     if "local" not in STORAGE.module_dict:
         from pet_infra.storage import local  # noqa: F401
+
+    if "pet_infra.noop_evaluator" not in EVALUATORS.module_dict:
+        from pet_infra.evaluators import noop  # noqa: F401
 
     _register_hydra()

@@ -79,13 +79,21 @@ class TestDiscoverPlugins:
         result = discover_plugins()
         assert "local" in result["storage"]
 
-    def test_discover_other_keys_are_empty(self):
-        """Non-storage registries have no plugins registered yet."""
+    def test_discover_first_party_registries_contain_only_pet_infra_plugins(self):
+        """pet-infra itself ships only 'local' storage and 'pet_infra.noop_evaluator'.
+
+        Other registries (trainers, converters, metrics) have no first-party
+        pet-infra plugins. The datasets registry is populated by downstream
+        plugin packages at entry-point discovery time (pet-data /
+        pet-annotation); this test only asserts the shape pet-infra owns and
+        tolerates downstream-supplied entries in ``datasets``.
+        """
         from pet_infra.plugins.discover import discover_plugins
 
         result = discover_plugins()
-        for key in ("trainers", "evaluators", "converters", "metrics", "datasets"):
+        for key in ("trainers", "converters", "metrics"):
             assert result[key] == [], f"Expected {key} to be empty, got {result[key]}"
+        assert "pet_infra.noop_evaluator" in result["evaluators"], result["evaluators"]
 
     def test_discover_with_required_existing(self):
         """discover_plugins(required=['pet_infra']) succeeds and returns same shape."""

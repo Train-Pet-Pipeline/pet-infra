@@ -1,0 +1,19 @@
+recipe:
+  recipe_id: pet_data_ingest_smoke
+  description: "Phase 2 smoke — load vision frames via plugin; no-op eval stage"
+  scope: cross_repo
+  schema_version: "2.0.0"
+  required_plugins:
+    - pet_data
+    - pet_annotation
+  stages:
+    - name: load_vision
+      component_registry: evaluators
+      component_type: pet_infra.noop_evaluator
+      inputs:
+        dataset: {ref_type: dataset, ref_value: pet_data.vision_frames}
+      config_path: evaluator/noop
+      depends_on: []
+  variations: []
+  produces: []
+  default_storage: local

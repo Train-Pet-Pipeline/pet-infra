@@ -12,3 +12,19 @@ releases:
     clearml: ">=1.14,<2.0"
     mmengine_lite: ">=0.10,<0.12"
     hydra_core: ">=1.3,<1.4"
+
+  - release: "2026.05"
+    pet_schema: "2.0.0"
+    pet_infra: "2.1.0"
+    pet_data: "1.1.0"
+    pet_annotation: "1.1.0"
+    # pet_train / pet_eval / pet_quantize / pet_ota have no pet-schema v2.0.0
+    # compatible build yet — Phase 3 will rebuild. Placeholder 0.1.0 reflects
+    # pre-Phase-3 state (not a shipping version).
+    pet_train: "0.1.0"
+    pet_eval: "0.1.0"
+    pet_quantize: "0.1.0"
+    pet_ota: "0.1.0"
+    clearml: ">=1.14,<2.0"
+    mmengine_lite: ">=0.10,<0.12"
+    hydra_core: ">=1.3,<1.4"

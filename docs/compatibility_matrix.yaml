@@ -1,0 +1,14 @@
+releases:
+  - release: "2026.05-phase1"
+    pet_schema: "2.0.0"
+    pet_infra: "2.0.0"
+    # Phases 2-5 still on 1.x until migrated
+    pet_data: "1.4.0"
+    pet_annotation: "1.2.0"
+    pet_train: "1.1.0"
+    pet_eval: "1.3.0"
+    pet_quantize: "1.1.0"
+    pet_ota: "1.1.0"
+    clearml: ">=1.14,<2.0"
+    mmengine_lite: ">=0.10,<0.12"
+    hydra_core: ">=1.3,<1.4"

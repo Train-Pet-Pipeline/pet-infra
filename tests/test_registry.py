@@ -19,4 +19,7 @@ def test_registry_decorator_works():
     class FakeTrainer:
         pass
 
-    assert TRAINERS.get("__fake_trainer__") is FakeTrainer
+    try:
+        assert TRAINERS.get("__fake_trainer__") is FakeTrainer
+    finally:
+        TRAINERS._module_dict.pop("__fake_trainer__", None)

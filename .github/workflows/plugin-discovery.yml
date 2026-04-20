@@ -13,8 +13,19 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
       - run: pip install -e ".[dev]"
+      - name: Install Phase 2 downstream plugin packages
+        run: |
+          pip install 'pet-data @ git+https://github.com/Train-Pet-Pipeline/pet-data@v1.1.0'
+          pip install 'pet-annotation @ git+https://github.com/Train-Pet-Pipeline/pet-annotation@v1.1.0'
       - name: pet list-plugins
         run: |
           pet list-plugins --json > plugins.json
           cat plugins.json
           python -c "import json; d=json.load(open('plugins.json')); assert 'local' in d['storage'], d"
+      - name: Assert Phase 2 dataset plugins registered
+        run: |
+          jq -e '.datasets | index("pet_data.vision_frames")'            plugins.json
+          jq -e '.datasets | index("pet_data.audio_clips")'              plugins.json
+          jq -e '.datasets | index("pet_annotation.vision_annotations")' plugins.json
+          jq -e '.datasets | index("pet_annotation.audio_annotations")'  plugins.json
+          jq -e '.evaluators | index("pet_infra.noop_evaluator")'        plugins.json

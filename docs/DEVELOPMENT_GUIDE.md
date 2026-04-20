@@ -16,7 +16,8 @@
 6. [跨仓库工程约定](#6-跨仓库工程约定)
 7. [开发环境与快速开始](#7-开发环境与快速开始)
 8. [Claude Code 开发指引](#8-claude-code-开发指引)
-9. [附录：版本管理、风险、术语表](#9-附录)
+9. [Phase 1 Foundation 运行时（pet-infra 2.0.0）](#9-phase-1-foundation-运行时pet-infra-200)
+10. [附录：版本管理、风险、术语表](#10-附录)
 
 ---
 
@@ -2131,9 +2132,182 @@ P95 延迟超标：
 
 ---
 
-## 9. 附录
+## 9. Phase 1 Foundation 运行时（pet-infra 2.0.0）
 
-### 9.1 版本管理总表
+### 9.1 六个核心插件注册表
+
+Pet-infra 提供 mmengine-lite Registry 作为统一的组件注册机制：
+
+**源文件：** `src/pet_infra/registry.py`
+
+| 注册表 | 用途 | 关键特征 |
+|---|---|---|
+| `TRAINERS` | 训练框架（SFT/DPO） | 属性：学习率、优化器、数据集 |
+| `EVALUATORS` | 评估管线 | 属性：模型路径、评估集、metrics |
+| `CONVERTERS` | 格式转换（ONNX/RKNN/RKLLM） | 属性：量化参数、导出精度 |
+| `METRICS` | 评估指标 | 强制实现 ClassVars：`name`、`higher_is_better` |
+| `DATASETS` | 数据加载器 | 属性：路径、预处理参数、batch size |
+| `STORAGE` | 存储后端 | 属性：URI scheme、读写接口 |
+
+所有注册通过 `@REGISTRY.register_module(name="plugin_name")` 装饰器在导入时完成。
+
+### 9.2 六个基础抽象类
+
+**源文件：** `src/pet_infra/base/{trainer,evaluator,converter,metric,dataset,storage}.py`
+
+每个 ABC 定义了下游插件必须实现的类型合约：
+
+- `BaseTrainer`：`train(recipe)` 返回 `(model_bytes, metrics_dict, metadata)`
+- `BaseEvaluator`：`evaluate(model_bytes, dataset)` 返回 `MetricResult`
+- `BaseConverter`：`convert(model_bytes, target_format)` 返回 `converted_bytes`
+- `BaseMetric`：`compute(predictions, references)` 返回 `MetricResult`；通过 `__init_subclass__` 强制实现 `name` 和 `higher_is_better` ClassVars
+- `BaseDataset`：`__iter__()` 返回 `(input, reference)` 元组
+- `BaseStorage`：`read(uri)` / `write(uri, data)` 返回规范化 URI
+
+### 9.3 首批存储实现：LocalStorage
+
+**源文件：** `src/pet_infra/storage/local.py`
+
+LocalStorage 是唯一的 Phase 1 内置存储后端，处理本地文件系统：
+
+- URI scheme：`local://<abs-path>`
+- `write()` 返回规范化的 `local://` URI，支持往返 round-trip
+- 用于本地开发、测试、以及单机/edge 部署场景
+
+Phase 3 增加 S3 / WebDataset / DVC 后端；Phase 1 专注 LocalStorage 稳定性。
+
+### 9.4 插件发现机制
+
+**源文件：** `src/pet_infra/plugins/discover.py`
+
+插件通过 setuptools entry-point 注册到 `pet_infra.plugins` 组：
+
+```yaml
+# pyproject.toml
+[project.entry-points."pet_infra.plugins"]
+pet_infra = "pet_infra._register:register_all"  # 内置插件
+# 第三方包自行在其 pyproject.toml 添加同组的 entry-point
+```
+
+发现 API：
+
+```python
+from pet_infra.plugins.discover import discover_plugins
+
+tree = discover_plugins()  # 返回 {registry_name: [plugin_keys]}
+tree = discover_plugins(required=["pet_infra"])  # 白名单过滤
+```
+
+CI 时 `pet list-plugins --json` 自动执行，验证关键插件已注册。
+
+### 9.5 Hydra ConfigStore 桥接
+
+**源文件：** `src/pet_infra/hydra_plugins/structured.py`
+
+使用 hydra-zen 的 `builds(ModelCls, populate_full_signature=True)` 从 pet-schema Pydantic 类型自动生成 Hydra 结构化配置：
+
+- 注册组（每组名为 `base`）：`recipe`、`trainer`、`evaluator`、`converter`、`dataset`
+- Pet-schema 保持为字段定义的唯一权威源——无需维护重复的 dataclass
+- 无偏差风险，字段变更自动同步到 Hydra 侧
+
+### 9.6 Recipe 管线
+
+Recipe 是跨仓库协调的执行计划，从 yaml 文件加载并验证：
+
+```python
+from pet_infra.recipe.compose import compose_recipe
+from pet_infra.recipe.preflight import preflight
+
+# 加载、应用覆盖、验证
+recipe, resolved_dict, config_sha = compose_recipe(
+    "recipes/smoke_foundation.yaml",
+    overrides=["trainer.batch_size=8"]
+)
+
+# 预检查：插件已注册、存储方案已注册、upstream stages 存在
+preflight(recipe)  # 失败抛 PreflightError
+```
+
+主要流程：
+
+1. **compose_recipe(path, overrides)**：Hydra 风格 yaml 加载 → Pydantic 验证 → 返回 `(recipe, resolved_dict, config_sha)`
+2. **build_execution_plan(recipe)**：拓扑排序舞台（依赖关系由 pet-schema `to_dag()` 定义）
+3. **precompute_card_id(recipe_id, stage_name, config_sha)**：内容寻址 ModelCard ID 格式 `{id}_{stage}_{sha[:8]}`
+4. **preflight(recipe)**：快速失败检查——组件已注册、存储方案已注册、upstream 舞台存在（DAG 无环由 pet-schema 模型验证器强制）
+
+### 9.7 pet 命令行工具
+
+**源文件：** `src/pet_infra/cli.py`
+
+两个子命令：
+
+```bash
+# 列出所有已注册插件
+pet list-plugins [--json]
+
+# 验证一个 recipe：加载、应用覆盖、运行预检
+pet validate --recipe=<path> [--override key=val ...] [--dump-resolved]
+```
+
+Phase 1 支持 dry-run（`validate`）；Phase 2+ 增加 `pet run` 执行。
+
+### 9.8 Recipe 布局
+
+| 目录 | 用途 | Phase |
+|---|---|---|
+| `pet-infra/recipes/*.yaml` | 跨仓库烟测式 recipes（Phase 1 smoke 在此） | 1+ |
+| `pet-infra/recipes/ablation/*.yaml` | 消融扫描参数组合 | 5 |
+| `pet-{repo}/configs/experiment/*.yaml` | 单仓库 recipes（科研模型、超参数搜索） | 3+ |
+
+**Phase 1 示例：** `recipes/smoke_foundation.yaml` 包含单个测试 trainer 舞台，验证 recipe 编排管线可用。
+
+### 9.9 CI 工作流
+
+| 工作流 | 触发 | 职责 |
+|---|---|---|
+| `plugin-discovery.yml` | PR/push | 运行 `pet list-plugins --json`；断言 `local` storage 已注册 |
+| `recipe-dry-run.yml` | PR/push | 遍历 `recipes/*.yaml` 运行 `pet validate`；Phase 1 不失败（烟测只用 fake trainer）；Phase 3 升级为强制 |
+| `schema-validation.yml` | PR/push | 解析 `docs/compatibility_matrix.yaml`；断言必需键完整 |
+
+### 9.10 版本兼容矩阵
+
+**源文件：** `docs/compatibility_matrix.yaml`
+
+跨仓库版本搭配表，按发布标签维护。Phase 1 入口：
+
+```yaml
+release: "2026.05-phase1"
+pet_schema: "2.0.0"
+pet_infra: "2.0.0"
+pet_data: "1.4.0"          # 其他仓库仍在 1.x，迁移中
+pet_annotation: "1.2.0"
+pet_train: "1.1.0"
+...
+```
+
+CI 时 schema-validation.yml 验证矩阵完整性。
+
+### 9.11 Phase 1 范围外
+
+以下特性已入规范但延期到后续阶段：
+
+- **S3 / WebDataset 存储**（规范 §7.9）→ Phase 3
+- **ClearML 集成**（运行时监控、超参日志）→ Phase 3
+- **DVC dvc.yaml / dvc repro**（实验再现）→ Phase 3
+- **GPU / k8s 资源探测**（分布式训练）→ Phase 3+
+- **`pet run` 真实执行**（Phase 1 仅干运行；Phase 2+ 执行）
+
+### 9.12 关键文档链接
+
+- **规范**：`/Train-Pet-Pipeline/pet-infra/docs/superpowers/specs/2026-04-20-multi-model-pipeline-design.md`
+- **实现计划**：`/Train-Pet-Pipeline/pet-infra/docs/superpowers/plans/2026-04-20-phase-1-foundation-plan.md`
+- **Schema 文档**：`/Train-Pet-Pipeline/pet-schema/docs/`
+
+---
+
+## 10. 附录
+
+### 10.1 版本管理总表
 
 | 组件 | 当前版本 | 存放位置 | 变更流程 |
 |---|---|---|---|
@@ -2145,7 +2319,7 @@ P95 延迟超标：
 | 黄金集 | v1 | pet-eval/benchmark/ | PR + eval 负责人 approve |
 | 设备端事件库 Schema | v1 | 设备固件（Alembic 迁移管理） | 固件发布 |
 
-### 9.2 已知限制与风险
+### 10.2 已知限制与风险
 
 | 风险 | 描述 | 缓解措施 |
 |---|---|---|
@@ -2157,7 +2331,7 @@ P95 延迟超标：
 | 多宠识别混淆 | 体型相近的猫咪 id_tag 可能混淆 | 依赖 id_confidence 字段，低置信度事件单独处理 |
 | 固件白名单被绕过 | 应用层 bug 尝试上传原始视频 | 固件层（不是应用层）拦截，需固件安全审计 |
 
-### 9.3 术语表
+### 10.3 术语表
 
 | 术语 | 含义 |
 |---|---|
@@ -2180,7 +2354,7 @@ P95 延迟超标：
 | 感知哈希 | pHash（Perceptual Hash），用于检测相似图像的去重算法 |
 | ECE | Expected Calibration Error，模型置信度校准误差 |
 
-### 9.4 外部依赖版本锁定表
+### 10.4 外部依赖版本锁定表
 
 在各仓库 `requirements.txt` 中需要固定以下关键依赖的主版本：
 
@@ -2196,7 +2370,7 @@ P95 延迟超标：
 | `wandb` | `>=0.16,<1.0` | 稳定 API |
 | `torch` | `==2.x.y`（固定 patch） | CUDA 兼容性 |
 
-### 9.5 快速参考：关键阈值
+### 10.5 快速参考：关键阈值
 
 所有阈值的权威来源是各仓库的 `params.yaml`，此处仅作参考：
 

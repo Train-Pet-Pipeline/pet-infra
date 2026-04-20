@@ -1,0 +1,24 @@
+name: schema-validation
+on:
+  pull_request: { branches: [dev, main] }
+  push:         { branches: [dev, main] }
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pyyaml
+      - name: check compatibility_matrix schema
+        run: |
+          python - <<'PY'
+          import yaml, sys
+          m = yaml.safe_load(open('docs/compatibility_matrix.yaml'))
+          assert 'releases' in m, m
+          for r in m['releases']:
+              for k in ['release','pet_schema','pet_infra','pet_data','pet_annotation',
+                       'pet_train','pet_eval','pet_quantize','pet_ota']:
+                  assert k in r, f'missing {k} in {r}'
+          print("compatibility_matrix OK")
+          PY

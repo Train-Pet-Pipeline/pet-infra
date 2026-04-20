@@ -5,6 +5,8 @@ on:
     branches: [dev, main]
   pull_request:
     branches: [dev, main]
+  repository_dispatch:
+    types: [schema-updated]
 
 jobs:
   lint-and-test:
@@ -16,6 +18,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Configure git for private repos
+        run: git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
         run: pip install -e ".[dev,api,sync]"

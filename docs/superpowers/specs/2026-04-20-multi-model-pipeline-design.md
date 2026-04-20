@@ -45,8 +45,9 @@ Train-Pet-Pipeline 目前已经上线 v1（2026-04-15 完成全链 E2E 集成测
 | 新增只预训练的模型（只 pretrain，不 fine-tune） | recipe 只声明 pretrain stage，后续 capability 自动跳过 | 加 if/else 判断某模型是否走 finetune |
 | 模型架构消融（Qwen2-VL vs. InternVL） | `pet run recipe=vlm_sft -m trainer=qwen,internvl` 一条命令 | 复制 recipe / 改 hardcode / 改 CLI |
 | 模型间对比（VLM vs. Audio CNN） | 同一 recipe 改 `trainer._target_` | 走两条独立 CLI |
-| 模型间交叉验证（VLM 产生弱标→训 Audio） | recipe 里串 stage：`vlm_infer → audio_train` | 手工中间脚本串流 |
-| 跨模态融合实验 | 新 fusion plugin 注册进 EVALUATORS + recipe 声明 | 改融合主循环源码 |
+| **业务侧多模型综合判断**（生产推理时 VLM + Audio 等多模型输出联合决策） | fusion plugin 注册进 EVALUATORS，recipe 声明 `fusion._target_`；多策略（`single_modal` / `and_gate` / `weighted` / `learned_fusion`）可互换 | 在应用代码或网关里 hard-code 多模型调用与合并逻辑 |
+| 模型间交叉监督（训练时一个模型产弱标喂另一个） | recipe 串 stage：`vlm_infer → audio_weak_label → audio_train` | 手工中间脚本串流 |
+| 跨模态融合消融扫描 | `pet run recipe=prod -m fusion=vlm_only,audio_only,and_gate,weighted` 一条命令 | 复制 4 份 recipe |
 
 **核心断言**：**capability 边界稳定 + 数据契约可扩展 + recipe 声明组合 = 新实验不需要写新 infra。**
 

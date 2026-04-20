@@ -1,0 +1,20 @@
+name: plugin-discovery
+on:
+  pull_request: { branches: [dev, main] }
+  push:         { branches: [dev, main] }
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Configure git for private repos
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - run: pip install -e ".[dev]"
+      - name: pet list-plugins
+        run: |
+          pet list-plugins --json > plugins.json
+          cat plugins.json
+          python -c "import json; d=json.load(open('plugins.json')); assert 'local' in d['storage'], d"

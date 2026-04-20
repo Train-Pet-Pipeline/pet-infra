@@ -11,12 +11,12 @@ from pet_infra.storage.local import LocalStorage
 class TestLocalStorageWrite:
     """Tests for LocalStorage.write()."""
 
-    def test_write_returns_absolute_path(self, tmp_path):
-        """write() returns the absolute path string of the written file."""
+    def test_write_returns_canonical_uri(self, tmp_path):
+        """write() returns the canonical local:// URI of the written file."""
         storage = LocalStorage()
         uri = f"local://{tmp_path}/foo/bar.bin"
         result = storage.write(uri, b"xyz")
-        assert result == str(tmp_path / "foo" / "bar.bin")
+        assert result == f"local://{tmp_path}/foo/bar.bin"
 
     def test_write_creates_file_with_content(self, tmp_path):
         """write() actually writes the bytes to disk."""
@@ -37,6 +37,13 @@ class TestLocalStorageWrite:
         storage = LocalStorage()
         with pytest.raises(ValueError):
             storage.write("s3://bucket/key", b"data")
+
+    def test_write_return_value_is_readable(self, tmp_path):
+        """write() return value is a canonical URI that can be passed back to read()."""
+        storage = LocalStorage()
+        uri = f"local://{tmp_path}/round.bin"
+        written = storage.write(uri, b"hello")
+        assert storage.read(written) == b"hello"
 
 
 class TestLocalStorageRead:

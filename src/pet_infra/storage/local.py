@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import urlparse
 
 from pet_infra.base import BaseStorage
@@ -16,7 +17,7 @@ class LocalStorage(BaseStorage):
     Handles URIs of the form ``local:///absolute/path/to/file``.
     """
 
-    scheme = "local"
+    scheme: ClassVar[str] = "local"
 
     def _path(self, uri: str) -> Path:
         """Parse a local:// URI and return its Path.
@@ -54,12 +55,12 @@ class LocalStorage(BaseStorage):
             data: Raw bytes to write.
 
         Returns:
-            The absolute path string where data was written.
+            The canonical ``local://`` URI where data was written.
         """
         p = self._path(uri)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
-        return str(p)
+        return f"{self.scheme}://{p}"
 
     def exists(self, uri: str) -> bool:
         """Check whether the given local URI exists on disk.

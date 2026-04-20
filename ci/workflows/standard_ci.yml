@@ -27,6 +27,9 @@ jobs:
           path: ../pet-infra
           token: ${{ secrets.CROSS_REPO_TOKEN }}
 
+      - name: Configure git for private repos
+        run: git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
       - name: Install dependencies
         run: make setup
 

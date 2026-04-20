@@ -45,13 +45,17 @@ def discover_plugins(
     ep_by_name = {ep.name: ep for ep in eps}
 
     if required is not None:
-        missing = [name for name in required if name not in ep_by_name]
+        required_set = set(required)
+        missing = sorted(required_set - ep_by_name.keys())
         if missing:
             raise RuntimeError(
                 f"Required plugin(s) not found in group {_PLUGIN_GROUP!r}: {missing}"
             )
+        to_load = [ep for name, ep in ep_by_name.items() if name in required_set]
+    else:
+        to_load = list(ep_by_name.values())
 
-    for ep in ep_by_name.values():
+    for ep in to_load:
         loader = ep.load()
         loader()
 

@@ -108,3 +108,33 @@ class TestDiscoverPlugins:
 
         with pytest.raises(RuntimeError, match="__missing__"):
             discover_plugins(required=["__missing__"])
+
+    def test_discover_respects_required_filter_when_multiple_eps(self, monkeypatch):
+        """discover_plugins(required=['alpha']) only invokes alpha's loader, not beta's."""
+        from pet_infra.plugins import discover as discover_mod
+
+        called: list[str] = []
+
+        def make_loader(name: str):
+            def _loader():
+                called.append(name)
+            return _loader
+
+        class FakeEP:
+            def __init__(self, name: str):
+                self.name = name
+                self._callable = make_loader(name)
+
+            def load(self):
+                return self._callable
+
+        fake_eps = [FakeEP("alpha"), FakeEP("beta")]
+        monkeypatch.setattr(
+            discover_mod, "entry_points", lambda group: fake_eps
+        )
+
+        result = discover_mod.discover_plugins(required=["alpha"])
+        assert called == ["alpha"]  # only alpha's loader ran
+        assert set(result.keys()) == {
+            "trainers", "evaluators", "converters", "metrics", "datasets", "storage",
+        }

@@ -4,12 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pet-infra"
-version = "1.0.0"
+version = "2.0.0"
 description = "Shared infrastructure for Train-Pet-Pipeline"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "tenacity>=8.0,<9.0",
     "pyyaml>=6.0,<7.0",
+    "pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema.git@v2.0.0",
+    "mmengine-lite>=0.10,<0.11",
+    "hydra-core>=1.3,<1.4",
+    "hydra-zen>=0.15,<0.17",
+    "click>=8.1,<9.0",
+    "networkx>=3.2,<4.0",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +33,12 @@ sync = [
     "tomli>=2.0; python_version < '3.12'",
     "tomli_w>=1.0",
 ]
+
+[project.scripts]
+pet = "pet_infra.cli:main"
+
+[project.entry-points."pet_infra.plugins"]
+pet_infra = "pet_infra._register:register_all"
 
 [tool.setuptools.packages.find]
 where = ["src"]

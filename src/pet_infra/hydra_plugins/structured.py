@@ -1,55 +1,49 @@
 """Hydra ConfigStore registration for pet-schema config groups.
 
-Phase 1 scope: reserve group/name slots so recipes can use Hydra's
-defaults-list composition. Field-level validation lives in pet-schema
-(Pydantic) and fires in ``compose_recipe`` via ``model_validate`` — we
-do not duplicate pet-schema fields as dataclasses to avoid drift.
+Uses hydra-zen ``builds(ModelCls, populate_full_signature=True)`` to
+auto-generate Hydra-compatible structured configs from pet-schema's
+Pydantic v2 BaseModel types. This preserves pet-schema as the single
+source of truth for field definitions — no manual dataclass mirrors,
+no drift risk — while exposing Hydra-native field-level types for
+config composition and ``hydra.utils.instantiate`` resolution.
 
-Phase 3 will revisit if structured-config-level type hints become valuable.
+Registered groups (each with name ``base``):
+  - recipe    → ExperimentRecipe
+  - trainer   → TrainerConfig
+  - evaluator → EvaluatorConfig
+  - converter → ConverterConfig
+  - dataset   → DatasetConfig
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from hydra.core.config_store import ConfigStore
+from hydra_zen import builds
+from pet_schema import (
+    ConverterConfig,
+    DatasetConfig,
+    EvaluatorConfig,
+    ExperimentRecipe,
+    TrainerConfig,
+)
 
-
-@dataclass
-class _RecipeSlot:
-    pass
-
-
-@dataclass
-class _TrainerSlot:
-    pass
-
-
-@dataclass
-class _EvaluatorSlot:
-    pass
-
-
-@dataclass
-class _ConverterSlot:
-    pass
-
-
-@dataclass
-class _DatasetSlot:
-    pass
+_GROUPS = {
+    "recipe": ExperimentRecipe,
+    "trainer": TrainerConfig,
+    "evaluator": EvaluatorConfig,
+    "converter": ConverterConfig,
+    "dataset": DatasetConfig,
+}
 
 
 def register() -> None:
-    """Register pet-schema config group slots with Hydra's ConfigStore.
+    """Register pet-schema structured configs with Hydra's ConfigStore.
 
-    Reserves group/name combinations so Phase 3 recipes can use Hydra's
-    defaults-list composition syntax (``defaults: [trainer: base, ...]``).
-    No pet-schema fields are duplicated here — validation fires in B7 via
-    ``ExperimentRecipe.model_validate(resolved_dict)``.
+    Uses hydra-zen ``builds()`` to auto-generate a dataclass mirror for each
+    pet-schema Pydantic model. Each generated config carries a ``_target_``
+    pointing at the corresponding pet-schema class, enabling
+    ``hydra.utils.instantiate(cfg)`` to produce real Pydantic instances.
     """
     cs = ConfigStore.instance()
-    cs.store(group="recipe",    name="base", node=_RecipeSlot)
-    cs.store(group="trainer",   name="base", node=_TrainerSlot)
-    cs.store(group="evaluator", name="base", node=_EvaluatorSlot)
-    cs.store(group="converter", name="base", node=_ConverterSlot)
-    cs.store(group="dataset",   name="base", node=_DatasetSlot)
+    for group, pydantic_cls in _GROUPS.items():
+        node = builds(pydantic_cls, populate_full_signature=True)
+        cs.store(group=group, name="base", node=node)

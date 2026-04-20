@@ -208,11 +208,19 @@ class BaseEvaluator(ABC):
         model_card: ModelCard,
         eval_config: dict,
         output_dir: Path,
-    ) -> EvaluationReport: ...
+    ) -> EvaluationReport:                   # EvaluationReport 定义见 Section 3.8
+        ...
 
     @abstractmethod
     def supports(self, model_card: ModelCard) -> bool: ...
 
+
+class EdgeFormat(str, Enum):
+    RKLLM = "rkllm"
+    RKNN  = "rknn"
+    ONNX  = "onnx"
+    GGUF  = "gguf"
+    # 新增格式：往枚举里加，不用改签名
 
 class BaseConverter(ABC):
     @abstractmethod
@@ -225,7 +233,7 @@ class BaseConverter(ABC):
     ) -> ModelCard: ...
 
     @abstractmethod
-    def target_format(self) -> Literal["rkllm", "rknn", "onnx", "gguf", ...]: ...
+    def target_format(self) -> EdgeFormat: ...
 
 
 class BaseMetric(ABC):
@@ -293,6 +301,19 @@ class VLMSftTrainer(BaseTrainer):
 
 ## 3. pet-schema Pydantic 契约
 
+### 3.0 本节定义的类型一览（Phase 1 planner 核对清单）
+
+| 类型 | 所在子节 | 归属文件 |
+|---|---|---|
+| `Modality` / `SourceInfo` | 3.2 | `samples.py` / `enums.py` |
+| `BaseSample` / `VisionSample` / `AudioSample` / `SensorSample` / `Sample` | 3.2 | `samples.py` |
+| `BaseAnnotation` / `VisionAnnotation` / `AudioAnnotation` / `Annotation` / `DpoPair` | 3.3 | `annotations.py` |
+| `QuantConfig` / `EdgeArtifact` / `ResourceSpec` / `ModelCard` | 3.4 | `model_card.py` |
+| `ArtifactRef` / `RecipeStage` / `AblationAxis` / `ExperimentRecipe` | 3.5 | `recipe.py` |
+| `MetricResult` | 保留现有 | `metric.py` |
+| `EvaluationReport` | 3.8 | `metric.py` |
+| `TrainerConfig` / `EvaluatorConfig` / `ConverterConfig` / `DatasetConfig` | 3.9 | `configs.py` |
+
 ### 3.1 模块组织
 
 ```
@@ -302,8 +323,9 @@ pet-schema/src/pet_schema/
 ├── annotations.py        ← BaseAnnotation / VisionAnnotation / AudioAnnotation
 ├── model_card.py         ← ModelCard / QuantConfig / EdgeArtifact
 ├── recipe.py             ← ExperimentRecipe / RecipeStage / AblationAxis
-├── metric.py             ← MetricResult（保留现有）
-├── enums.py              ← 共享 Literal / Enum
+├── metric.py             ← MetricResult（保留现有） / EvaluationReport
+├── configs.py            ← TrainerConfig / EvaluatorConfig / ConverterConfig / DatasetConfig（Structured Configs）
+├── enums.py              ← 共享 Literal / Enum / EdgeFormat
 ├── adapters/
 │   ├── hf_features.py
 │   ├── webdataset.py
@@ -424,6 +446,16 @@ class ResourceSpec(BaseModel):
 
 class ModelCard(BaseModel):
     # 身份
+    #
+    # id 的产生权威：
+    #   - pet-infra CLI 在每个 stage 启动前（Section 5 时序 [9]）根据
+    #     f"{recipe_id}_{stage_name}_{resolved_config_sha[:8]}" 预计算
+    #   - 通过 BaseTrainer.fit 的 resolved_config["_target_card_id"] 字段注入给 plugin
+    #   - plugin 必须使用注入的 id（不允许自造），以保证 content-addressed 不变量
+    #   - 不是 Pydantic computed_field（因为 resolved_config_sha 需要 pet-infra 计算）
+    #
+    #   这保证 parent_models / ArtifactRef(ref_type="recipe_stage_output") 在
+    #   上游 stage 执行之前就能被下游 stage 引用并解析。
     id: str
     version: str
     modality: Modality
@@ -466,11 +498,25 @@ class ModelCard(BaseModel):
 
 ```python
 class ArtifactRef(BaseModel):
+    """Stage 间 / stage-to-dataset 的引用。各 ref_type 的解析规则：
+
+    - dataset              → ref_value 是 DATASETS registry key；CLI 调 DATASETS.build(...)
+    - model_card           → ref_value 是已存在 ModelCard.id；CLI 从 ClearML registry 或
+                             本地 modelcards/ 目录读取该 ModelCard 并传给 plugin
+    - dvc_path             → ref_value 是 DVC 追踪的任意路径；plugin 自行处理语义
+    - recipe_stage_output  → ref_value 是同一 recipe 内的上游 stage.name；解析为
+                             **该 stage 的 fit/evaluate/convert 返回的 ModelCard**
+                             （与 ref_type="model_card" 效果相同，但 id 在 recipe 执行前不存在，
+                             由 pet-infra 预计算 id 后回填到下游 stage 的 inputs）
+    """
     ref_type: Literal["dataset", "model_card", "dvc_path", "recipe_stage_output"]
     ref_value: str
 
 class RecipeStage(BaseModel):
     name: str
+    # component_registry 有意只枚举这三个 — stage 必须是产出 artifact 的能力（"主动"）。
+    # DATASETS / METRICS / STORAGE 是 "被动" 依赖，通过 ArtifactRef 或 plugin 内部引用，
+    # 不作为独立 stage 出现。
     component_registry: Literal["trainers","evaluators","converters"]
     component_type: str
     inputs: dict[str, ArtifactRef]
@@ -480,11 +526,15 @@ class RecipeStage(BaseModel):
     on_failure: Literal["stop","continue","abort"] = "stop"
 
 class AblationAxis(BaseModel):
+    """声明一个消融轴。pet-infra 在执行时把 variations 编译为 Hydra 的
+    sweeper 参数（等价于命令行 --multirun + param.path=v1,v2,v3），不需要用户
+    在 recipe 里同时手写 hydra.sweeper.params —— 如果同时写了，以 variations 为准。
+    `stage` 必须指向一个 RecipeStage.name。"""
     name: str
     stage: str
     hydra_path: str
     values: list[Union[str,int,float,bool]]
-    link_to: Optional[str]
+    link_to: Optional[str]                  # 联动另一个 axis，pairwise 而非笛卡尔积
 
 class ExperimentRecipe(BaseModel):
     recipe_id: str
@@ -515,6 +565,66 @@ class ExperimentRecipe(BaseModel):
 
 - `PetFeederEvent` **保留**，挂在 `VisionAnnotation.parsed` 下
 - DB 通过 Alembic migration 渐进改造，已提交的 migration 不改，只新增（CLAUDE.md 约束）
+
+### 3.8 EvaluationReport（评估输出契约）
+
+```python
+# metric.py
+class GateCheck(BaseModel):
+    metric_name: str
+    threshold: float
+    comparator: Literal["ge", "le", "eq"]   # metric value vs threshold
+    passed: bool
+    actual_value: float
+
+class EvaluationReport(BaseModel):
+    report_id: str                          # content-addressed
+    model_card_id: str                      # 被评估的模型
+    evaluator_type: str                     # registry key
+    dataset_uri: str
+    metrics: list[MetricResult]             # 复用现有 MetricResult（Section 3 模块组织中声明保留）
+    gate_checks: list[GateCheck]
+    gate_status: Literal["passed", "failed", "pending"]
+    artifacts: dict[str, str]               # 附加文件 uri（confusion matrix png / per-sample csv 等）
+    evaluated_at: datetime
+    clearml_task_id: Optional[str]
+```
+
+Gate 逻辑（pet-eval）消费 `gate_checks`，根据 `gate_status` 决定 recipe 是否继续。
+
+### 3.9 Structured Config 契约（Hydra 目标类型）
+
+```python
+# configs.py
+class ResourcesSection(BaseModel):
+    gpu_count: int = 0
+    gpu_memory_gb: int = 0
+    cpu_count: int = 1
+    estimated_hours: float = 1.0
+
+class TrainerConfig(BaseModel):
+    """Hydra `trainer/*.yaml` 组复合后的目标类型。"""
+    type: str                               # registry key（跨仓 FQN，如 "pet_train.vlm_sft"）
+    args: dict                              # plugin-specific；plugin 内部自己用 Pydantic 再校验
+    resources: ResourcesSection
+
+class EvaluatorConfig(BaseModel):
+    type: str
+    args: dict
+    gates: list[GateCheck] = []             # recipe 可预先声明门限
+
+class ConverterConfig(BaseModel):
+    type: str
+    args: dict
+    calibration: Optional[ArtifactRef] = None
+
+class DatasetConfig(BaseModel):
+    type: str
+    args: dict
+    modality: Modality
+```
+
+**注意**：这一层做**外壳校验**（字段存在、类型、必填），不校验 `args` 内部语义 — 每个 plugin 在 `validate_config()` 里用自己的 Pydantic 做二次校验。两级校验避免了 pet-schema 和 plugin 实现的紧耦合。
 
 ---
 
@@ -673,6 +783,8 @@ recipe:
 
 ```yaml
 # pet-infra/recipes/ablation/vlm_lora_sweep.yaml
+# variations 是唯一声明源；pet-infra 编译成等价的 Hydra --multirun 调用
+# （不要在同文件再写 hydra.sweeper.params，会被覆盖）
 defaults:
   - /vlm_full_pipeline
   - _self_
@@ -687,14 +799,7 @@ recipe:
       stage: sft
       hydra_path: trainer.args.lora_alpha
       values: [16, 32, 64]
-      link_to: lora_r_sweep
-
-hydra:
-  mode: MULTIRUN
-  sweeper:
-    params:
-      trainer.args.lora_r: 32,64,128,256
-      trainer.args.lora_alpha: 16,32,64
+      link_to: lora_r_sweep                 # pairwise — 不做笛卡尔积
 ```
 
 ### 4.7 Structured Configs（Hydra × Pydantic 桥）
@@ -862,7 +967,8 @@ releases:
 ```
 feature/* → dev (单仓) → CI schema-validation + plugin-contract
 pet-schema dev → main (触发 repository_dispatch)
-pet-infra integration + smoke-e2e → 自动 open PR 更新下游 pin
+pet-infra integration + smoke-e2e → [Phase 5 起自动化] 自动 open PR 更新下游 pin
+(Phase 1-4 期间：人工执行下游 pin 更新，CI 只做校验)
 下游仓 feature → dev → main
 全部 main 对齐 → pet-infra 更新 compatibility_matrix.yaml
 打 release tag: release-2026.05
@@ -930,7 +1036,8 @@ pet-infra integration + smoke-e2e → 自动 open PR 更新下游 pin
 - CLI Hydra 化 + 注册为 Dataset plugin
 
 **验收**：
-- 历史数据迁移脚本跑过
+- 历史数据迁移脚本跑过；`select count(*)` 前后 diff = 0（严格等同，空表新增除外）
+- 每个 Sample 字段都能往返 Pydantic serialize / deserialize
 - 新 CLI 能用 Hydra override
 - `pet run recipe=pet_data_ingest` 跑通
 

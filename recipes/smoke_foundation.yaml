@@ -1,0 +1,19 @@
+recipe:
+  recipe_id: smoke_foundation
+  description: "Phase 1 smoke — single fake trainer stage, no real compute"
+  scope: single_repo
+  owner_repo: pet-infra
+  schema_version: "2.0.0"
+  stages:
+    - name: train
+      component_registry: trainers
+      component_type: pet_infra.fake_trainer
+      inputs: {}
+      config_path: trainer/fake_trainer
+      depends_on: []
+  variations: []
+  produces:
+    - fake_model_v1
+  default_storage: local
+  required_plugins:
+    - pet_infra

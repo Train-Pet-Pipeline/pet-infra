@@ -1,0 +1,16 @@
+recipe_id: minimal-smoke-test
+description: Minimal recipe for unit tests
+scope: single_repo
+schema_version: "2.0.0"
+stages:
+  - name: sft
+    component_registry: trainers
+    component_type: sft_lora
+    inputs: {}
+    config_path: configs/sft.yaml
+    depends_on: []
+variations: []
+produces:
+  - sft_model
+default_storage: local
+required_plugins: []

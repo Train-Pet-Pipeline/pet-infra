@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pet_infra.base.converter import BaseConverter
 from pet_infra.base.dataset import BaseDataset
 from pet_infra.base.evaluator import BaseEvaluator

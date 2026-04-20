@@ -143,3 +143,10 @@ def test_base_storage_concrete_subclass_instantiates():
             return iter([])
 
     assert isinstance(Fake(), BaseStorage)
+
+
+def test_metric_concrete_subclass_missing_classvar_raises() -> None:
+    with pytest.raises(TypeError, match="must define ClassVar"):
+        class BadMetric(BaseMetric):  # missing name + higher_is_better
+            def compute(self, predictions, references, **kwargs):
+                return None  # type: ignore[return-value]

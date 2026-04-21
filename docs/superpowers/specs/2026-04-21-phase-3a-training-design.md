@@ -60,7 +60,7 @@
 |----------------------|-------------------|---------|
 | TRAINERS | LlamaFactorySFTTrainer / LlamaFactoryDPOTrainer / TinyTestTrainer | pet-train |
 | EVALUATORS | VLMEvaluator / AudioEvaluator | pet-eval |
-| METRICS | bleu / rouge_l / meteor / bertscore / hallucination_rate / instruction_adherence / safety_score / mos / audio_accuracy | pet-eval |
+| METRICS | anomaly_recall / calibration / kl_quantization / latency / mood_correlation / narrative_quality / schema_compliance / audio_accuracy | pet-eval |
 | CONVERTERS | (Phase 3B) | - |
 | DATASETS | (复用 Phase 2) | pet-data / pet-annotation |
 | STORAGE | (复用 Phase 1) | pet-infra |
@@ -446,7 +446,11 @@ def pet_run(recipe_path: Path, resume: bool = True):
 
 
 def _hash_stage_config(stage, prev_card) -> str:
-    """sha256(canonical_json(stage_recipe_subtree) + prev_card.checkpoint_uri)"""
+    """sha256(canonical_json(stage.config) + prev_card.checkpoint_uri)
+
+    stage.config 即该 stage 被 Hydra 完整 compose 后的 dict
+    （含所有 override 展开），也是 §5.2 rule 4 哈希唯一输入。
+    """
     import hashlib, json
     payload = json.dumps(stage.config, sort_keys=True, separators=(",", ":"))
     payload += (prev_card.checkpoint_uri if prev_card else "")
@@ -566,12 +570,14 @@ card_id = precompute_card_id(
     recipe_id=recipe.id,
     stage_name=stage.name,
     config_sha=sha256(
-        canonical_json(stage.config)                        # 该 stage 完整 Hydra 配置
+        canonical_json(stage.config)                        # 该 stage 完整 Hydra 配置（含所有 override）
         + (prev_card.checkpoint_uri if prev_card else "")   # 上游产物 URI
     ).hexdigest(),
 )
 # 形式：{recipe_id}_{stage_name}_{sha[:8]}
 ```
+
+其中 `canonical_json = json.dumps(..., sort_keys=True, separators=(",", ":"))`（§4.5 `_hash_stage_config` 即此实现）。
 
 - 任何 override 变化 → stage.config canonical_json 变化 → sha 变化 → 必 miss
 - Plugin 必须把 orchestrator 算出的 `card_id` 写回 `ModelCard.id`（非循环：orchestrator 在 plugin 执行前就能算）
@@ -702,8 +708,8 @@ exit code: 0（有成功 trial）| 1（全失败）
 DAG execution failed:
   ✓ train (45min, card: pet_sft_qwen2vl_2b_abc123)
   ✗ eval (2min, GateFailedError)
-      bleu=0.22 < min_bleu=0.30
-      hallucination_rate=0.18 > max_hallucination=0.15
+      narrative_quality=2.3 < min_narrative_quality=3.0
+      calibration_ece=0.15 > max_calibration_ece=0.10
   ∅ [quantize] skipped (upstream failed)
 ```
 
@@ -712,7 +718,9 @@ DAG execution failed:
 所有错误走 CLAUDE.md 约定的 JSON 日志：
 ```json
 {"ts": "...", "stage": "eval", "level": "ERROR", "err_type": "GateFailedError",
- "metrics": {"bleu": 0.22}, "thresholds": {"min_bleu": 0.30}, "card_id": "..."}
+ "metrics": {"narrative_quality": 2.3, "calibration_ece": 0.15},
+ "thresholds": {"min_narrative_quality": 3.0, "max_calibration_ece": 0.10},
+ "card_id": "..."}
 ```
 ClearML 自动捕获 stdout 到 task log。
 
@@ -758,7 +766,7 @@ pet-infra/recipes/
 
 **pet-infra**（扩到 120+ tests）
 - Unit：build_dag 拓扑 + 缺依赖；precompute_card_id 哈希稳定；Cache round-trip + 损坏；Logger ABC 合同；on_unavailable 3 策略
-- Integration：tiny smoke 完整 DAG；Resume（删 eval cache 只跑 eval）；Gate failed（`min_bleu: 0.99` 确认 GateFailedError + 短路）；Multirun（`-m` 两 trial 独立 card）；Parallel launcher 拒绝
+- Integration：tiny smoke 完整 DAG；Resume（删 eval cache 只跑 eval）；Gate failed（`min_narrative_quality: 99.0` 强制不可达阈值，确认 GateFailedError + 短路）；Multirun（`-m` 两 trial 独立 card）；Parallel launcher 拒绝
 
 ### 7.3 CI workflow
 

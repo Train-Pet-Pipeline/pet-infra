@@ -1,0 +1,9 @@
+owner_repo: test-owner
+description: base-a description
+scope: single_repo
+schema_version: "2.0.0"
+stages: []
+variations: []
+produces: []
+default_storage: local
+required_plugins: []

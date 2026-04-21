@@ -1,0 +1,3 @@
+defaults:
+  - loop_b
+recipe_id: circular

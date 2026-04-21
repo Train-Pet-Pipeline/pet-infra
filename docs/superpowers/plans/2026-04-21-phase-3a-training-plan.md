@@ -1025,7 +1025,7 @@ from typing import Optional
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from pet_schema.recipe import ExperimentRecipe
+from pet_schema.experiment_recipe import ExperimentRecipe
 from pet_schema.model_card import ModelCard
 from pet_infra.experiment_logger import build_experiment_logger
 from pet_infra.recipe.card_id import precompute_card_id

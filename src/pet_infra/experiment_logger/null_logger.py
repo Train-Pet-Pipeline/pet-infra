@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from pet_schema.model_card import ModelCard
+from pet_schema.recipe import ExperimentRecipe
 
 from .base import ExperimentLogger
 
@@ -10,7 +11,7 @@ from .base import ExperimentLogger
 class NullLogger(ExperimentLogger):
     """No-op logger for unit tests / scenarios requiring zero tracking."""
 
-    def start(self, recipe, stage: str) -> None:
+    def start(self, recipe: ExperimentRecipe | None, stage: str) -> str | None:
         """Start a task; always returns None."""
         return None
 

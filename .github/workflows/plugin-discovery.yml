@@ -12,21 +12,29 @@ jobs:
       - name: Configure git for private repos
         run: |
           git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
-      - name: Install Phase 2 downstream plugin packages (pulls pet-infra v2.0.0 + deps)
+      - name: Install pet-infra (editable, this PR's code)
+        run: pip install -e ".[dev]"
+
+      - name: Install Phase 2 downstream plugin packages (peer-dep, no-deps)
         run: |
-          pip install 'pet-data @ git+https://github.com/Train-Pet-Pipeline/pet-data@v1.1.0'
-          pip install 'pet-annotation @ git+https://github.com/Train-Pet-Pipeline/pet-annotation@v1.1.0'
-      - name: Override pet-infra with editable checkout (this PR's code)
-        run: pip install -e ".[dev]" --force-reinstall --no-deps
+          pip install 'pet-data @ git+https://github.com/Train-Pet-Pipeline/pet-data@v1.2.0' --no-deps
+          pip install 'pet-annotation @ git+https://github.com/Train-Pet-Pipeline/pet-annotation@v2.0.0' --no-deps
+
+      - name: Assert pet-infra peer version (§11.4)
+        run: python -c "import pet_infra; assert pet_infra.__version__.startswith('2.'), pet_infra.__version__"
+
       - name: pet list-plugins
         run: |
           pet list-plugins --json > plugins.json
           cat plugins.json
           python -c "import json; d=json.load(open('plugins.json')); assert 'local' in d['storage'], d"
-      - name: Assert Phase 2 dataset plugins registered
+
+      - name: Assert Phase 2 dataset plugins registered (4-paradigm)
         run: |
-          jq -e '.datasets | index("pet_data.vision_frames")'            plugins.json
-          jq -e '.datasets | index("pet_data.audio_clips")'              plugins.json
-          jq -e '.datasets | index("pet_annotation.vision_annotations")' plugins.json
-          jq -e '.datasets | index("pet_annotation.audio_annotations")'  plugins.json
-          jq -e '.evaluators | index("pet_infra.noop_evaluator")'        plugins.json
+          jq -e '.datasets | index("pet_data.vision_frames")'     plugins.json
+          jq -e '.datasets | index("pet_data.audio_clips")'       plugins.json
+          jq -e '.datasets | index("pet_annotation.llm")'         plugins.json
+          jq -e '.datasets | index("pet_annotation.classifier")'  plugins.json
+          jq -e '.datasets | index("pet_annotation.rule")'        plugins.json
+          jq -e '.datasets | index("pet_annotation.human")'       plugins.json
+          jq -e '.evaluators | index("pet_infra.noop_evaluator")' plugins.json

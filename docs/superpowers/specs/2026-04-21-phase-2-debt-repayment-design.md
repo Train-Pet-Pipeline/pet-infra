@@ -47,7 +47,7 @@ pet-schema 新增 4 个 Pydantic 子类继承 `BaseAnnotation`，按 **annotator
 
 **共通字段**（每张表都有）：
 ```
-annotation_id, target_id, modality, schema_version, created_at, storage_uri
+annotation_id, target_id, annotator_id, annotator_type, modality, schema_version, created_at, storage_uri
 ```
 - `target_id` = 被标注对象 ID（frame_id / audio_sample_id / sensor_sample_id 通用，不再按 modality 分列名）
 - `modality` 是 attribute 列（**不是** discriminator）——每张表天然容纳任意 modality
@@ -170,7 +170,7 @@ python -c "import pet_infra; assert pet_infra.__version__.startswith(('2.',))"
 - `tests/test_adapter_routing.py`：给定 `annotator_type` 路由到正确表；未知类型 fail-fast
 - `tests/test_plugin_keys.py`：4 个 `DATASETS.module_dict` 键可发现
 - `tests/test_cli_annotator_dispatch.py`：CLI `--annotator=llm --modality=audio` 路由到 `llm_annotations`
-- **旧测试直接删**（test_store.py 里引用旧 VisionAnnotationRow 等），不做兼容保留
+- **旧测试直接删**（test_store.py 里引用旧 VisionAnnotationRow 等），不做兼容保留。`test_store.py` 整仓 **重写**（不是保留旧壳 + 新增 case），与新四表模型对齐
 - 新 fixture factory：`conftest.py` 提供 `llm_annotation_factory()` 等 4 个工厂
 
 **pet-data（#2）**

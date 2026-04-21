@@ -1,10 +1,10 @@
 """Integration: the Phase 2 smoke recipe preflights cleanly when pet-data
 and pet-annotation plugin packages are installed into the environment.
 
-Pre-requisite: the test env must have pet-data >= 1.1.0 and
-pet-annotation >= 1.1.0 installed (editable or from tag). The pet-infra
-CI workflow ``plugin-discovery.yml`` pins them to ``v1.1.0``; locally a
-developer can use the shared ``pet-pipeline`` conda env.
+Pre-requisite: the test env must have pet-data >= 1.2.0 and
+pet-annotation >= 2.0.0 installed (editable or from tag). The pet-infra
+CI workflow ``plugin-discovery.yml`` pins them to ``v1.2.0`` / ``v2.0.0``;
+locally a developer can use the shared ``pet-pipeline`` conda env.
 
 If either package is missing the two tests skip with a clear message so
 contributors without the downstream repos installed are not blocked.
@@ -21,15 +21,19 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SMOKE_RECIPE = REPO_ROOT / "recipes" / "pet_data_ingest_smoke.yaml"
 
+# pet-annotation v2.0.0 uses the 4-paradigm model (llm / classifier / rule / human)
+# per pet-schema v2.1.0 four-table structure.
 PHASE2_DATASET_KEYS = {
     "pet_data.vision_frames",
     "pet_data.audio_clips",
-    "pet_annotation.vision_annotations",
-    "pet_annotation.audio_annotations",
+    "pet_annotation.llm",
+    "pet_annotation.classifier",
+    "pet_annotation.rule",
+    "pet_annotation.human",
 }
 
 _MISSING_DOWNSTREAM_REASON = (
-    "pet-data / pet-annotation v1.1.0 not installed — install via "
+    "pet-data / pet-annotation v2.0.0 not installed — install via "
     "plugin-discovery CI matrix or the pet-pipeline conda env"
 )
 

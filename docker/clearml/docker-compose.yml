@@ -1,0 +1,51 @@
+version: "3.8"
+services:
+  apiserver:
+    image: allegroai/clearml:latest
+    ports:
+      - "8008:8008"
+    environment:
+      CLEARML_ELASTIC_SERVICE_HOST: elasticsearch
+      CLEARML_MONGODB_SERVICE_HOST: mongo
+      CLEARML_REDIS_SERVICE_HOST: redis
+    depends_on:
+      - elasticsearch
+      - mongo
+      - redis
+    volumes:
+      - clearml-data:/opt/clearml/data
+
+  webserver:
+    image: allegroai/clearml:latest
+    ports:
+      - "8080:80"
+    depends_on:
+      - apiserver
+
+  fileserver:
+    image: allegroai/clearml:latest
+    ports:
+      - "8081:8081"
+    volumes:
+      - clearml-files:/mnt/fileserver
+
+  mongo:
+    image: mongo:4.4
+    volumes:
+      - mongo-data:/data/db
+
+  elasticsearch:
+    image: elasticsearch:7.17
+    environment:
+      - discovery.type=single-node
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+  redis:
+    image: redis:6
+
+volumes:
+  clearml-data:
+  clearml-files:
+  mongo-data:
+  es-data:

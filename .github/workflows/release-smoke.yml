@@ -23,11 +23,11 @@ jobs:
           git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y libsndfile1
-      - name: Install pet-infra + pet-train + pet-eval (matrix 2026.07-rc pins)
+      - name: Install pet-infra + pet-train + pet-eval (matrix 2026.07 final pins)
         run: |
           pip install -e ".[dev]"
-          pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.0.0-rc1'
-          pip install 'pet-eval @ git+https://github.com/Train-Pet-Pipeline/pet-eval@v2.0.0-rc1'
+          pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.0.0'
+          pip install 'pet-eval @ git+https://github.com/Train-Pet-Pipeline/pet-eval@v2.0.0'
       - name: Assert plugins register
         run: |
           python -c "from pet_train.plugins._register import register_all as r1; r1(); print('pet_train plugins registered OK')"

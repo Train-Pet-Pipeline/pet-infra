@@ -45,16 +45,13 @@ releases:
     mmengine_lite: ">=0.10,<0.12"
     hydra_core: ">=1.3,<1.4"
 
-  - release: "2026.07-rc"
+  - release: "2026.07"
     pet_schema: "2.1.0"
-    pet_infra: "2.3.0-rc1"
+    pet_infra: "2.3.0"
     pet_data: "1.2.0"
     pet_annotation: "2.0.0"
-    # Phase 3A 进行中：pet_train/eval 的 rc1 标记代表"与 pet-infra 2.3.0-rc1 的
-    # matrix 接口一致"，正式 v2.0.0 将在 Phase 1/2 完成时落地（见
-    # docs/superpowers/plans/2026-04-21-phase-3a-training-plan.md 的 P1/P2 阶段）。
-    pet_train: "2.0.0-rc1"
-    pet_eval: "2.0.0-rc1"
+    pet_train: "2.0.0"
+    pet_eval: "2.0.0"
     pet_quantize: "0.1.0"
     pet_ota: "0.1.0"
     clearml: ">=1.14,<2.0"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json as jsonlib
+from pathlib import Path
 
 import click
 
@@ -9,6 +10,22 @@ import click
 @click.group()
 def main() -> None:
     """pet-infra CLI."""
+
+
+@main.command("run")
+@click.argument("recipe_path", type=click.Path(exists=True))
+@click.option("--no-resume", is_flag=True, help="Disable resume-from-cache; re-run all stages.")
+@click.option("-m", "--multirun", is_flag=True, hidden=True)  # delegate to Hydra in future
+def run_cmd(recipe_path: str, no_resume: bool, multirun: bool) -> None:
+    """Execute a recipe DAG with optional resume from cache."""
+    from pet_infra.orchestrator.runner import pet_run, GateFailedError
+
+    try:
+        card = pet_run(Path(recipe_path), resume=not no_resume)
+        click.secho(f"run complete: card_id={card.id}", fg="green")
+    except GateFailedError as e:
+        click.secho(f"GateFailedError: {e}", fg="red", err=True)
+        raise SystemExit(3)
 
 
 @main.command("list-plugins")

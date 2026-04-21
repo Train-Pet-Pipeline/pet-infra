@@ -2137,6 +2137,11 @@ P95 延迟超标：
 ✗ 让 narrative 包含历史对比信息（"今天比昨天少吃了"）
 ```
 
+### 8.6 Phase DoD 自检
+
+任何 Phase/子 Phase 结束前按 `docs/PHASE_DOD_TEMPLATE.md` 逐项勾选。
+North Star §0.2.1 四维度（pluggability / flexibility / extensibility / comparability）各 ≥ 3 分（<3 rework）。
+
 ---
 
 ## 9. Phase 1 Foundation 运行时（pet-infra 2.0.0）

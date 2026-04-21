@@ -70,12 +70,15 @@ def _run_single(recipe_path: Path, overrides: dict[str, Any], out_dir: Path) -> 
     from pet_infra.orchestrator.runner import pet_run  # noqa: PLC0415
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    card = pet_run(recipe_path)
+    # Convert dict overrides → Hydra-style list before passing to pet_run.
+    override_list = [f"{k}={v}" for k, v in overrides.items()]
+    card = pet_run(recipe_path, overrides=override_list)
+    card_path = out_dir / "card.json"
+    card_path.write_text(card.model_dump_json(indent=2))
     return {
-        "card_path": out_dir / "card.json",
+        "card_path": card_path,
         "status": "ok",
         "overrides": overrides,
-        "card": card,
     }
 
 

@@ -1,33 +1,17 @@
-recipe:
-  recipe_id: smoke_small
-  description: "Phase 3A CUDA release gate — Qwen2-VL LoRA SFT + VLM eval, real thresholds"
-  scope: single_repo
-  owner_repo: pet-infra
-  schema_version: "2.0.0"
-  stages:
-    - name: train
-      component_registry: trainers
-      component_type: llamafactory_sft
-      inputs: {}
-      config_path: configs/smoke/small_train.yaml
-      depends_on: []
-    - name: eval
-      component_registry: evaluators
-      component_type: vlm_evaluator
-      inputs:
-        model: {ref_type: recipe_stage_output, ref_value: train}
-      config_path: configs/smoke/small_eval.yaml
-      depends_on:
-        - train
-  variations: []
-  produces:
-    - smoke_small_model
-  default_storage: local
-  required_plugins:
-    - pet_train
-    - pet_eval
+defaults:
+  - _base/smoke_base
+  - trainer/llamafactory_sft
+  - evaluator/vlm_evaluator
+  - dataset/vlm_calibration_subset
+  - converter/vlm_rkllm_w4a16
+  - evaluator/quantized_vlm_evaluator
+  - ota/local_backend
 
-experiment_logger:
-  name: clearml
-  mode: offline
-  on_unavailable: fallback_null
+recipe_id: smoke_small
+description: "CUDA release gate; Qwen2-VL LoRA SFT full pipeline, real thresholds"
+scope: cross_repo
+schema_version: "2.0.0"
+smoke_tier: small
+
+produces:
+  - edge_artifact_rkllm_small

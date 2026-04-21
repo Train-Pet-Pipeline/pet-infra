@@ -1,0 +1,8 @@
+# @package _global_
+stages:
+  deploy:
+    component_registry: ota
+    component_type: local_backend
+    inputs: {}
+    config_path: configs/smoke/${smoke_tier}_deploy.yaml
+    depends_on: [eval_quant]

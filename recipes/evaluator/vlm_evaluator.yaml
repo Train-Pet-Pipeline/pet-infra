@@ -1,0 +1,8 @@
+# @package _global_
+stages:
+  eval_fp:
+    component_registry: evaluators
+    component_type: vlm_evaluator
+    inputs: {}
+    config_path: configs/smoke/${smoke_tier}_eval.yaml
+    depends_on: [train]

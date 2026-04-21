@@ -1,0 +1,8 @@
+# @package _global_
+stages:
+  calibrate:
+    component_registry: datasets
+    component_type: audio_calibration_subset
+    inputs: {}
+    config_path: configs/smoke/${smoke_tier}_calibrate.yaml
+    depends_on: [eval_fp]

@@ -28,5 +28,5 @@ jobs:
         run: |
           python -c "import pet_infra; print(pet_infra.__version__)"
           python -c "import pet_infra; assert pet_infra.__version__.startswith('2.')"
-      - name: Smoke: list-plugins
+      - name: "Smoke: list-plugins"
         run: pet list-plugins --json

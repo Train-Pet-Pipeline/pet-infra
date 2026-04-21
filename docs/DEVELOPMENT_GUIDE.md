@@ -18,7 +18,8 @@
 8. [Claude Code 开发指引](#8-claude-code-开发指引)
 9. [Phase 1 Foundation 运行时（pet-infra 2.0.0）](#9-phase-1-foundation-运行时pet-infra-200)
 10. [Phase 2 Data & Annotation 运行时（pet-data 1.1.0, pet-annotation 1.1.0）](#10-phase-2-data--annotation-运行时pet-data-110-pet-annotation-110)
-11. [附录：版本管理、风险、术语表](#11-附录)
+11. [依赖治理与 peer-dep 约定](#11-依赖治理与-peer-dep-约定)
+12. [附录：版本管理、风险、术语表](#12-附录)
 
 ---
 
@@ -2371,9 +2372,102 @@ Spec §7.3 原本提到 "Alembic 迁移"，但两仓从 v1 起就使用上述手
 
 ---
 
-## 11. 附录
+## 11. 依赖治理与 peer-dep 约定
 
-### 11.1 版本管理总表
+### 11.1 为什么 peer-dep
+
+`pet-infra` 是整个管线的底层运行时（Registry、Plugin Discovery、Config、CLI），**其他仓库（pet-data、pet-annotation 等）均依赖它**。若下游 `pyproject.toml` 用 `pet-infra @ git+...@vX.Y.Z` 硬 pin，则每次 pet-infra 版本升级都需同步改所有下游仓库的 pin，违背"pet-infra 可自由演进"原则。
+
+正确做法：**`compatibility_matrix.yaml` 是唯一版本真理源**，下游不在 `[project.dependencies]` 里声明 pet-infra，改由安装者（CI/开发者）按 matrix 先装 pet-infra、再装下游。
+
+核心约定：
+
+- `pet-infra/docs/compatibility_matrix.yaml` 记录每个 release 条目（release 名 / schema / infra / data / annotation 版本）
+- 下游 `pyproject.toml` **不声明** `pet-infra` 依赖
+- 下游 `_register.py` 加 fail-fast guard（见 §11.3）确保未装 pet-infra 时立即给出友好错误
+- CI 按 §11.4 统一装序，保证 pet-infra 先于下游安装
+
+### 11.2 下游 `pyproject.toml` 写法
+
+**删除**（或不添加）`[project.dependencies]` 里的 pet-infra 行：
+
+```toml
+# 错误写法——禁止
+[project.dependencies]
+# pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.1.0  ← 删除
+
+# 正确写法——什么都不写，pet-infra 是 peer dependency
+```
+
+**README 必须加 Prerequisites 段**：
+
+```markdown
+## Prerequisites
+
+`pet-infra >= 2.x` must be installed first before installing this package.
+Install the exact version pinned in
+[`pet-infra/docs/compatibility_matrix.yaml`](https://github.com/Train-Pet-Pipeline/pet-infra/blob/main/docs/compatibility_matrix.yaml):
+
+```bash
+pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@<matrix_tag>'
+```
+```
+
+### 11.3 `_register.py` fail-fast guard 模板
+
+每个下游仓库的 `src/<pkg>/_register.py` 文件**顶部**（任何其他 import 之前）必须加：
+
+```python
+try:
+    import pet_infra  # noqa: F401
+except ImportError as e:
+    raise ImportError(
+        "pet-data requires pet-infra to be installed first. "
+        "Install via 'pip install pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@<tag>' "
+        "using the tag pinned in pet-infra/docs/compatibility_matrix.yaml."
+    ) from e
+```
+
+（将 `"pet-data"` 替换为对应仓库名。）
+
+此 guard 的作用：开发者若忘记装 pet-infra 就装下游包，import 时立刻得到含安装指令的友好错误，而不是难懂的 `ModuleNotFoundError`。
+
+### 11.4 统一 CI 装序模板
+
+所有涉及 pet-infra 下游仓库的 GitHub Actions workflow（包括 pet-data、pet-annotation）**必须**按以下顺序安装：
+
+```bash
+# Step 1: 先装 pet-infra（用 compatibility_matrix 里固定的 tag）
+pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@<matrix_tag>'
+
+# Step 2: 再装下游包（--no-deps 防止 pip 解析覆盖已装的 pet-infra）
+pip install -e . --no-deps
+
+# Step 3: 断言 pet-infra 版本正确
+python -c "import pet_infra; assert pet_infra.__version__.startswith(('2.',))"
+```
+
+`<matrix_tag>` 从 `pet-infra/docs/compatibility_matrix.yaml` 里当前 release 条目取得（如 `v2.1.0`）。
+
+**pet-infra 自身 CI**（`plugin-discovery.yml` 等）：用 `pip install -e ".[dev]"` 装自身，无需上述三步。
+
+### 11.5 开发环境
+
+本地开发使用共享 conda 环境 `pet-pipeline`（规范来源：`feedback_env_naming`）：
+
+```bash
+conda activate pet-pipeline
+```
+
+该环境已预装 pet-infra 最新 dev 版本，无需手动 `pip install pet-infra`。**所有仓库开发均在此环境下进行，不创建 per-repo 独立 conda env。**
+
+CI 流水线每次从干净环境全新安装，按 §11.4 装序保证环境一致性。
+
+---
+
+## 12. 附录
+
+### 12.1 版本管理总表
 
 | 组件 | 当前版本 | 存放位置 | 变更流程 |
 |---|---|---|---|
@@ -2385,7 +2479,7 @@ Spec §7.3 原本提到 "Alembic 迁移"，但两仓从 v1 起就使用上述手
 | 黄金集 | v1 | pet-eval/benchmark/ | PR + eval 负责人 approve |
 | 设备端事件库 Schema | v1 | 设备固件（Alembic 迁移管理） | 固件发布 |
 
-### 11.2 已知限制与风险
+### 12.2 已知限制与风险
 
 | 风险 | 描述 | 缓解措施 |
 |---|---|---|
@@ -2397,7 +2491,7 @@ Spec §7.3 原本提到 "Alembic 迁移"，但两仓从 v1 起就使用上述手
 | 多宠识别混淆 | 体型相近的猫咪 id_tag 可能混淆 | 依赖 id_confidence 字段，低置信度事件单独处理 |
 | 固件白名单被绕过 | 应用层 bug 尝试上传原始视频 | 固件层（不是应用层）拦截，需固件安全审计 |
 
-### 11.3 术语表
+### 12.3 术语表
 
 | 术语 | 含义 |
 |---|---|
@@ -2420,7 +2514,7 @@ Spec §7.3 原本提到 "Alembic 迁移"，但两仓从 v1 起就使用上述手
 | 感知哈希 | pHash（Perceptual Hash），用于检测相似图像的去重算法 |
 | ECE | Expected Calibration Error，模型置信度校准误差 |
 
-### 11.4 外部依赖版本锁定表
+### 12.4 外部依赖版本锁定表
 
 在各仓库 `requirements.txt` 中需要固定以下关键依赖的主版本：
 
@@ -2436,7 +2530,7 @@ Spec §7.3 原本提到 "Alembic 迁移"，但两仓从 v1 起就使用上述手
 | `wandb` | `>=0.16,<1.0` | 稳定 API |
 | `torch` | `==2.x.y`（固定 patch） | CUDA 兼容性 |
 
-### 11.5 快速参考：关键阈值
+### 12.5 快速参考：关键阈值
 
 所有阈值的权威来源是各仓库的 `params.yaml`，此处仅作参考：
 

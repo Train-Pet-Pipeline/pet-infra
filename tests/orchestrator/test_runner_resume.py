@@ -35,7 +35,6 @@ def _make_card(card_id: str, task: str) -> ModelCard:
     )
 
 
-@TRAINERS.register_module(name="fake_sft", force=True)
 class FakeSFTTrainer:
     """Fake trainer plugin for testing."""
 
@@ -49,7 +48,6 @@ class FakeSFTTrainer:
         return _make_card(card_id="PLACEHOLDER", task="sft")
 
 
-@EVALUATORS.register_module(name="fake_eval", force=True)
 class FakeEvaluator:
     """Fake evaluator plugin for testing."""
 
@@ -61,6 +59,16 @@ class FakeEvaluator:
         """Return a fake ModelCard, logging the call."""
         CALL_LOG.append("eval")
         return _make_card(card_id="PLACEHOLDER", task="eval")
+
+
+@pytest.fixture(autouse=True)
+def _register_fakes():
+    """Register fake plugins before each test and unregister after."""
+    TRAINERS.register_module(name="fake_sft", module=FakeSFTTrainer, force=True)
+    EVALUATORS.register_module(name="fake_eval", module=FakeEvaluator, force=True)
+    yield
+    TRAINERS.module_dict.pop("fake_sft", None)
+    EVALUATORS.module_dict.pop("fake_eval", None)
 
 
 @pytest.fixture(autouse=True)

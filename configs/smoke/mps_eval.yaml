@@ -1,0 +1,14 @@
+# VLMEvaluator kwargs — permissive smoke thresholds for MPS dev run
+metrics:
+  - narrative_quality
+  - schema_compliance
+thresholds:
+  min_anomaly_recall: 0.0
+  max_calibration_ece: 1.0
+  max_kl_quantization: 1.0
+  max_latency_ms_p95: 999999
+  min_mood_correlation: 0.0
+  min_narrative_quality: 0.0
+  min_schema_compliance: 0.0
+  min_audio_accuracy: 0.0
+eval_dataset: pet_annotation.vision_annotations

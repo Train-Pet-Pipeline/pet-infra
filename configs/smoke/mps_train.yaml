@@ -1,0 +1,13 @@
+# LlamaFactorySFTTrainer kwargs — Qwen2-VL LoRA, M2+ Mac MPS dev smoke
+base_model: Qwen/Qwen2-VL-2B-Instruct
+lora_r: 16
+lora_alpha: 32
+lr: 1.0e-4
+batch_size: 1
+grad_accum: 4
+max_steps: 20
+dataset: pet_annotation.vision_annotations
+output_dir: /tmp/smoke_mps
+attn_implementation: eager
+precision: bf16
+device: mps

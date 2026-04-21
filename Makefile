@@ -1,4 +1,4 @@
-.PHONY: setup test lint clean clearml-up clearml-down
+.PHONY: setup test lint clean clearml-up clearml-down smoke-mps
 
 setup:
 	python -m pip install -e ".[dev,api,sync]"
@@ -18,3 +18,6 @@ clearml-up:
 
 clearml-down:
 	cd docker/clearml && docker compose down
+
+smoke-mps:
+	pet run recipes/smoke_mps.yaml

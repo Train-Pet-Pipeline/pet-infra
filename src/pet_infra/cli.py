@@ -89,25 +89,75 @@ def list_plugins(as_json: bool) -> None:
 
 
 @main.command("validate")
-@click.option("--recipe", "recipe_path", required=True, type=click.Path(exists=True))
+@click.option("--recipe", "recipe_path", default=None, type=click.Path(exists=True),
+              help="Compose and preflight a recipe (exclusive with --card/--hardware).")
 @click.option("--override", "overrides", multiple=True, help="Hydra-style key=value override")
 @click.option("--dump-resolved", is_flag=True, help="print resolved config before preflight")
-def validate_cmd(recipe_path: str, overrides: tuple[str, ...], dump_resolved: bool) -> None:
-    """Compose and preflight a recipe."""
-    from pet_infra.plugins.discover import discover_plugins
-    from pet_infra.recipe.compose import compose_recipe
-    from pet_infra.recipe.preflight import PreflightError, preflight
+# Phase 3B: hardware validation options (exclusive with --recipe)
+@click.option("--card", "card_path", default=None, type=click.Path(path_type=Path),
+              help="Path to ModelCard JSON (requires --hardware + --device).")
+@click.option("--hardware", default=None, type=click.Choice(["rk3576"]),
+              help="Target hardware platform for validation.")
+@click.option("--device", "device_id", default=None,
+              help="Device identifier, e.g. rk3576-dev-01.")
+@click.option("--firmware", "firmware_version", default="unknown",
+              help="Firmware version string (default: unknown).")
+@click.option("--dry-run", is_flag=True,
+              help="Write a stub HardwareValidation without running on device.")
+@click.option("--validated-by", "validated_by", default=None,
+              help="Override validated_by field (must match schema regex).")
+def validate_cmd(
+    recipe_path: str | None,
+    overrides: tuple[str, ...],
+    dump_resolved: bool,
+    card_path: Path | None,
+    hardware: str | None,
+    device_id: str | None,
+    firmware_version: str,
+    dry_run: bool,
+    validated_by: str | None,
+) -> None:
+    """Validate a recipe (--recipe) or a ModelCard against hardware (--card + --hardware).
 
-    discover_plugins()
-    try:
-        recipe, resolved, sha = compose_recipe(recipe_path, list(overrides))
-        if dump_resolved:
-            click.echo(jsonlib.dumps(resolved, indent=2, default=str))
-        preflight(recipe)
-    except PreflightError as e:
-        click.secho(f"PreflightError: {e}", fg="red", err=True)
-        raise SystemExit(2)
-    click.secho(f"preflight: OK  (sha={sha[:8]})", fg="green")
+    Modes are mutually exclusive:
+      --recipe <path>                 compose + preflight the recipe
+      --card <path> --hardware rk3576 --device <id>  write HardwareValidation stub
+    """
+    # Mutual-exclusion check
+    hw_mode = card_path is not None or hardware is not None
+    if recipe_path and hw_mode:
+        raise click.ClickException("--recipe is exclusive with --card/--hardware/--device")
+    if not recipe_path and not hw_mode:
+        raise click.ClickException(
+            "Either --recipe or (--card + --hardware + --device) is required"
+        )
+
+    if recipe_path:
+        # Existing Phase 3A recipe preflight path
+        from pet_infra.plugins.discover import discover_plugins
+        from pet_infra.recipe.compose import compose_recipe
+        from pet_infra.recipe.preflight import PreflightError, preflight
+
+        discover_plugins()
+        try:
+            recipe, resolved, sha = compose_recipe(recipe_path, list(overrides))
+            if dump_resolved:
+                click.echo(jsonlib.dumps(resolved, indent=2, default=str))
+            preflight(recipe)
+        except PreflightError as e:
+            click.secho(f"PreflightError: {e}", fg="red", err=True)
+            raise SystemExit(2)
+        click.secho(f"preflight: OK  (sha={sha[:8]})", fg="green")
+        return
+
+    # Phase 3B hardware validation path
+    if not (card_path and hardware and device_id):
+        raise click.ClickException(
+            "--card, --hardware, and --device are all required for hardware validation"
+        )
+    from pet_infra.cli_commands.validate_hardware import run_hardware_validate
+
+    run_hardware_validate(card_path, hardware, device_id, firmware_version, dry_run, validated_by)
 
 
 if __name__ == "__main__":

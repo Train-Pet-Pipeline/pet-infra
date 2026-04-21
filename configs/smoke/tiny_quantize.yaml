@@ -1,0 +1,2 @@
+# noop converter needs nothing; keep file for defaults: path resolution
+dummy: true

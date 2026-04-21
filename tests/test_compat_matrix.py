@@ -29,3 +29,14 @@ def test_matrix_has_phase_2_release(matrix: dict) -> None:
     assert r["pet_annotation"] == "1.1.0", r
     assert r["pet_infra"] == "2.1.0", r
     assert r["pet_schema"] == "2.0.0", r
+
+
+def test_matrix_has_2026_06_release(matrix: dict) -> None:
+    """The 2026.06 row exists with Phase 2 final version pins."""
+    releases = {r["release"]: r for r in matrix["releases"]}
+    assert "2026.06" in releases, f"missing 2026.06 release; got {sorted(releases)}"
+    r = releases["2026.06"]
+    assert r["pet_schema"] == "2.1.0", r
+    assert r["pet_infra"] == "2.2.0", r
+    assert r["pet_data"] == "1.2.0", r
+    assert r["pet_annotation"] == "2.0.0", r

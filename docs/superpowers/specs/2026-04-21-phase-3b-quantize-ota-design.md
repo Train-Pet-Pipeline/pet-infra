@@ -97,13 +97,20 @@ class HardwareValidation(BaseModel):
     latency_ms_p95: float
     accuracy: float | None = None
     kl_divergence: float | None = None
-    validated_by: str
+    validated_by: str          # see format convention below
     notes: str | None = None
 
 class ModelCard(BaseModel):
     # ... existing ...
     hardware_validation: HardwareValidation | None = None
 ```
+
+**`validated_by` format convention:** a string matching one of:
+
+- `github-actions:<workflow_run_id>` — when written by an automated release CI job against a rented/shared device.
+- `operator:<github_username>` — when written by a human release manager from their workstation.
+
+Enforced as a regex in `HardwareValidation` (`^(github-actions|operator):[A-Za-z0-9_\-.]+$`). The prefix distinguishes provenance at audit time; any other format rejected at schema validation.
 
 A card whose `hardware_validation is None` cannot pass the release tag guard for pet-quantize/pet-ota 2.0.0 finals (see §6.3).
 
@@ -138,7 +145,7 @@ Add `HardwareValidation` (see §3.3). Back-compat: a 2.1.0 card loads under 2.2.
 - `recipes/smoke_tiny.yaml`, `smoke_mps.yaml`, `smoke_small.yaml` — rewritten as overrides (~5 lines each) using `defaults:`.
 - `params.yaml` — append `quantize:`, `ota:` namespaces plus new gate thresholds (see §4.6).
 
-**Config parameters added to `params.yaml`:**
+**Config parameters added to `pet-infra/params.yaml`** (pet-infra is the sole owner of pipeline-level numerics per CLAUDE.md "all numerics from params.yaml" rule; per-repo params.yaml files do NOT duplicate these keys — they reference via OmegaConf interpolation):
 
 ```yaml
 quantize:
@@ -161,6 +168,8 @@ gate:
   min_quantized_accuracy: 0.85
   max_kl_divergence: 0.1
 ```
+
+All `${params.gate.*}` / `${params.quantize.*}` / `${params.ota.*}` references throughout the spec resolve against `pet-infra/params.yaml`. If a plugin needs a plugin-local tunable not suitable for pipeline-wide params (e.g. implementation-detail retry counts), it goes in the stage's `config_path` yaml, not in `params.yaml`.
 
 ### 4.3 pet-quantize 2.0.0 (BREAKING)
 
@@ -439,13 +448,21 @@ Fail-fast, no silent fallback. SDK-dependent plugin branches guard with `try/exc
 
 ### 6.3 Release tag guard
 
-pet-quantize and pet-ota `release-*.yml` workflows (tag-triggered) assert:
+pet-quantize and pet-ota `release-*.yml` workflows (tag-triggered) assert against a parameterized card path. The workflow reads the release recipe's `recipe_id` and final-stage name, then loads the card:
 
 ```python
-card = ModelCard.model_validate_json(Path("results/release/deploy/card.json").read_text())
-assert card.hardware_validation is not None, "release blocked: manual hardware gate not run"
+recipe = compose_recipe(Path(os.environ["RELEASE_RECIPE_PATH"]))
+final_stage_name = recipe.stages[-1].name  # typically 'deploy'
+card_path = Path(f"results/{recipe.recipe_id}/{final_stage_name}/card.json")
+card = ModelCard.model_validate_json(card_path.read_text())
+
+assert card.hardware_validation is not None, (
+    f"release blocked: manual hardware gate not run for recipe {recipe.recipe_id}"
+)
 assert card.gate_status == "passed", "release blocked: gate failed"
 ```
+
+The `RELEASE_RECIPE_PATH` workflow env defaults to `recipes/release.yaml` but is parameterizable per repo. A future rename of the release recipe does not break the guard — the path is derived from `recipe.recipe_id`, not hardcoded.
 
 Fail-closed; tags without a completed manual gate never ship.
 

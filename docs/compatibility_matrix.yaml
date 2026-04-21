@@ -57,3 +57,18 @@ releases:
     clearml: ">=1.14,<2.0"
     mmengine_lite: ">=0.10,<0.12"
     hydra_core: ">=1.3,<1.4"
+
+  - release: "2026.08-rc"
+    pet_schema: "2.3.1"           # Phase 3B: P0-B (2.3.0 fields) + P0-C (2.3.1 registry widen)
+    pet_infra: "2.4.0-rc1"
+    pet_data: "1.2.0"
+    pet_annotation: "2.0.0"
+    pet_train: "2.0.0"
+    pet_eval: "2.1.0-rc1"
+    pet_quantize: "2.0.0-rc1"
+    pet_ota: "2.0.0-rc1"
+    clearml: ">=1.14,<2.0"
+    mmengine_lite: ">=0.10,<0.12"
+    hydra_core: ">=1.3,<1.4"
+    rknn_toolkit2: "==2.0.0"
+    rkllm_toolkit: "==1.2.0"

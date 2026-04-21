@@ -12,16 +12,58 @@ def main() -> None:
     """pet-infra CLI."""
 
 
+_PARALLEL_LAUNCHERS = frozenset({"joblib", "ray", "submitit"})
+
+
+def _check_multirun_launcher(overrides: tuple[str, ...]) -> None:
+    """Raise UsageError if any override selects a parallel Hydra launcher.
+
+    Phase 3A spec §4.5 defers parallel execution; only the ``basic`` (in-process
+    sequential) launcher is permitted during multirun sweeps.
+
+    Args:
+        overrides: Tuple of raw Hydra-style override strings from the CLI.
+
+    Raises:
+        click.UsageError: When a non-basic launcher is detected.
+    """
+    for override in overrides:
+        # Match patterns like "hydra/launcher=joblib" or "+hydra/launcher=ray"
+        key, _, value = override.lstrip("+~").partition("=")
+        if key.strip() == "hydra/launcher" and value.strip() in _PARALLEL_LAUNCHERS:
+            raise click.UsageError(
+                f"parallel Hydra launchers ({', '.join(sorted(_PARALLEL_LAUNCHERS))}) are "
+                "deferred — Phase 3A only supports serial execution; re-run without overriding "
+                "hydra/launcher or use the default basic launcher. "
+                "File a ticket to request parallel sweep support."
+            )
+
+
 @main.command("run")
-@click.argument("recipe_path", type=click.Path(exists=True))
+@click.argument("recipe_path", type=click.Path())
+@click.argument("overrides", nargs=-1)
 @click.option("--no-resume", is_flag=True, help="Disable resume-from-cache; re-run all stages.")
-@click.option("-m", "--multirun", is_flag=True, hidden=True)  # delegate to Hydra in future
-def run_cmd(recipe_path: str, no_resume: bool, multirun: bool) -> None:
+@click.option(
+    "-m",
+    "--multirun",
+    is_flag=True,
+    help="Run a sweep (serial trials only; parallel launchers are not supported in Phase 3A).",
+)
+def run_cmd(recipe_path: str, overrides: tuple[str, ...], no_resume: bool, multirun: bool) -> None:
     """Execute a recipe DAG with optional resume from cache."""
     from pet_infra.orchestrator.runner import pet_run, GateFailedError
 
+    # Guard runs before path validation so that a bad launcher flag surfaces
+    # a clear actionable error even when the recipe file does not yet exist.
+    if multirun:
+        _check_multirun_launcher(overrides)
+
+    p = Path(recipe_path)
+    if not p.exists():
+        raise click.BadParameter(f"Path '{recipe_path}' does not exist.", param_hint="'RECIPE_PATH'")
+
     try:
-        card = pet_run(Path(recipe_path), resume=not no_resume)
+        card = pet_run(p, resume=not no_resume)
         click.secho(f"run complete: card_id={card.id}", fg="green")
     except GateFailedError as e:
         click.secho(f"GateFailedError: {e}", fg="red", err=True)

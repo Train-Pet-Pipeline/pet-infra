@@ -624,12 +624,18 @@ Annotation = Annotated[
 
 
 class DpoPair(BaseModel):
-    """保留：由 human/llm annotation 衍生出的偏好对。"""
+    """A chosen/rejected annotation pair for DPO training."""
+
+    model_config = ConfigDict(extra="forbid")
+
     pair_id: str
     chosen_annotation_id: str
     rejected_annotation_id: str
     target_id: str
     modality: Modality
+    # 保留 preference_source/reason（method-source tracking — comparability）
+    preference_source: Literal["human", "rule", "auto"]
+    reason: Optional[str] = None
     created_at: datetime
     schema_version: str
 ```

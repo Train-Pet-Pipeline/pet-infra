@@ -1,9 +1,10 @@
 # src/pet_infra/orchestrator/stage_executor.py
 """Dispatch a RecipeStage to the appropriate plugin registry and execute it."""
 from __future__ import annotations
+
 from typing import Any
 
-from pet_infra.registry import TRAINERS, EVALUATORS, CONVERTERS
+from pet_infra.registry import CONVERTERS, EVALUATORS, TRAINERS
 
 # Maps component_registry literal (plural) to mmengine Registry object.
 STAGE_REGISTRIES = {

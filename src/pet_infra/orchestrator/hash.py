@@ -1,6 +1,7 @@
 # src/pet_infra/orchestrator/hash.py
 """Canonical-JSON sha256 hash for stage cache keys (§5.2 rule 4)."""
 from __future__ import annotations
+
 import hashlib
 import json
 from typing import Any

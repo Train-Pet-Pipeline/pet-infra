@@ -6,11 +6,10 @@ from pathlib import Path
 import pet_schema
 import pytest
 import yaml
-
 from pet_schema.model_card import ModelCard
-from pet_infra.registry import TRAINERS, EVALUATORS, CONVERTERS
-from pet_infra.orchestrator.runner import pet_run, GateFailedError
 
+from pet_infra.orchestrator.runner import GateFailedError, pet_run
+from pet_infra.registry import CONVERTERS, EVALUATORS, TRAINERS
 
 CALL_LOG: list[str] = []
 
@@ -159,12 +158,14 @@ def test_gate_failed_short_circuits_downstream(tmp_path):
     assert "quantize" not in CALL_LOG
 
     # eval card IS saved to cache (gate failed card persisted for inspection)
+    from types import SimpleNamespace
+
+    import yaml as _yaml
+
     from pet_infra.orchestrator.cache import StageCache
     from pet_infra.orchestrator.hash import hash_stage_config
     from pet_infra.recipe.card_id import precompute_card_id
     from pet_infra.recipe.compose import compose_recipe
-    from types import SimpleNamespace
-    import yaml as _yaml
 
     recipe_obj, _, _ = compose_recipe(recipe_path)
     eval_stage = next(s for s in recipe_obj.stages if s.name == "eval")

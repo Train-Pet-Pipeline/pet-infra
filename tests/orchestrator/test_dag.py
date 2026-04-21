@@ -1,11 +1,17 @@
 # tests/orchestrator/test_dag.py
 import pytest
-from pet_infra.orchestrator.dag import build_dag, DAGCycleError
+
+from pet_infra.orchestrator.dag import DAGCycleError, build_dag
 
 
 def _stage(name, depends_on=()):
-    class S: pass
-    s = S(); s.name = name; s.depends_on = list(depends_on); return s
+    class S:
+        pass
+
+    s = S()
+    s.name = name
+    s.depends_on = list(depends_on)
+    return s
 
 
 def test_linear_order():

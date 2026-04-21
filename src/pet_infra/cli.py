@@ -51,7 +51,7 @@ def _check_multirun_launcher(overrides: tuple[str, ...]) -> None:
 )
 def run_cmd(recipe_path: str, overrides: tuple[str, ...], no_resume: bool, multirun: bool) -> None:
     """Execute a recipe DAG with optional resume from cache."""
-    from pet_infra.orchestrator.runner import pet_run, GateFailedError
+    from pet_infra.orchestrator.runner import GateFailedError, pet_run
 
     # Guard runs before path validation so that a bad launcher flag surfaces
     # a clear actionable error even when the recipe file does not yet exist.
@@ -60,7 +60,9 @@ def run_cmd(recipe_path: str, overrides: tuple[str, ...], no_resume: bool, multi
 
     p = Path(recipe_path)
     if not p.exists():
-        raise click.BadParameter(f"Path '{recipe_path}' does not exist.", param_hint="'RECIPE_PATH'")
+        raise click.BadParameter(
+            f"Path '{recipe_path}' does not exist.", param_hint="'RECIPE_PATH'"
+        )
 
     try:
         card = pet_run(p, resume=not no_resume)

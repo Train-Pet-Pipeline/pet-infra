@@ -6,11 +6,10 @@ from pathlib import Path
 import pet_schema
 import pytest
 import yaml
-
 from pet_schema.model_card import ModelCard
-from pet_infra.registry import TRAINERS, EVALUATORS
-from pet_infra.orchestrator.runner import pet_run
 
+from pet_infra.orchestrator.runner import pet_run
+from pet_infra.registry import EVALUATORS, TRAINERS
 
 CALL_LOG: list[str] = []
 

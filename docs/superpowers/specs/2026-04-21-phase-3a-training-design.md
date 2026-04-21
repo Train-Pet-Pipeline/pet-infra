@@ -94,18 +94,40 @@ recipe.yaml
 
 ## 2. pet-train v2.0.0 组件设计
 
+> **基线审计**：本节的删除/保留/移动清单基于 2026-04-21 pet-train main HEAD 真实文件结构。PR #A 首步需 `git ls-files` 做最终审计并把清单 commit 为 PR 附件。
+
 ### 2.1 删除清单（破坏性）
 
-- `scripts/train_sft.sh` / `scripts/train_dpo.sh`
-- `configs/llamafactory_*.yaml`（旧入口）
-- `src/pet_train/kl_distill/*`（v1 stub）
-- `wandb` 依赖及所有 `wandb.init/.log` 调用
-- 旧 CLI 入口 `pet-train sft/dpo`（被 `pet run` 取代）
+**scripts/**（全目录删）
+- `scripts/train_sft.sh` / `scripts/train_dpo.sh` / `scripts/train_audio.sh`
+- `scripts/collect_logits.sh` / `scripts/merge_lora.sh` / `scripts/eval_after_train.sh`
 
-### 2.2 保留
+**src/pet_train/**（v1 实现）
+- `kl_loss.py`（v1 KL 蒸馏 loss，3A 无蒸馏需求）
+- `logits_provider/`（配套 kl_loss 的 teacher logits 提供器）
+- `schema_compliance_callback.py`（Transformer callback 形式的 schema 校验；v2 由 pet-eval `schema_compliance` metric 在评估侧负责，不在训练 callback 里做）
+- `audio_model.py`（audio 训练 CLI 顶层入口，v2 仅保留零样本推理路径）
 
-- `vendor/LLaMA-Factory`（submodule）
-- `src/pet_train/audio/panns_zero_shot.py`（3A 内仅供 AudioEvaluator 间接调用；AudioTrainer 暂不启用）
+**configs/**（顶层）
+- `configs/base/sft_base.yaml` / `configs/base/dpo_base.yaml`
+- `configs/experiments/sft_lora_r16_lr2e4_ep3.yaml` / `configs/experiments/dpo_user_feedback_v1.yaml`
+- `configs/audio/mobilenetv2_transfer_v1.yaml`
+  → 这些 YAML 的数值约定迁入 `params.yaml` + Hydra `pet_train/plugins/<name>/conf/` defaults
+
+**pyproject.toml**
+- 删 `wandb` 依赖
+- 删旧 CLI entry_points（`pet-train` 入口改为由 `pet run` 取代，不保留独立 CLI）
+
+### 2.2 保留与迁移
+
+| 项 | 现路径 | v2 去向 |
+|----|--------|---------|
+| LLaMA-Factory submodule | `vendor/LLaMA-Factory` | 原地不动 |
+| PANNs 零样本推理 | `src/pet_train/audio_inference.py` | 移入 `src/pet_train/audio/inference.py`（命名空间化，供 AudioEvaluator 跨仓 import） |
+| PANNs 模型架构定义 | `src/pet_train/audio_model_arch.py` | 移入 `src/pet_train/audio/arch.py` |
+| 音频前处理 | `src/pet_train/audio_transforms.py` | 移入 `src/pet_train/audio/transforms.py` |
+
+迁移后 `pet-eval/plugins/audio_evaluator.py` 从 `pet_train.audio.inference import ...`（§5.3 样板）。
 
 ### 2.3 新增 plugin 结构
 
@@ -162,28 +184,43 @@ train:
   batch_size: 4
   grad_accum: 4
   max_steps: 1000
-gate:
-  min_bleu: 0.30
-  max_hallucination: 0.15
 ```
+
+> Gate 阈值见 §3.8（统一放 pet-eval 管辖的 gate namespace，避免 train/eval 分两处维护）。
 
 ---
 
 ## 3. pet-eval v2.0.0 组件设计
 
+> **基线审计**：本节对照 2026-04-21 pet-eval main HEAD 真实结构（`src/pet_eval/{metrics,runners,gate,inference,report}/`，无顶层 `scripts/` 或 `configs/`）。PR #A 首步同 pet-train：`git ls-files` 审计 commit 为附件。
+
 ### 3.1 删除清单
 
-- `scripts/eval_*.sh`
-- `src/pet_eval/wandb_logger.py`
-- `configs/eval_*.yaml`
-- 旧 CLI `pet-eval run`
-- `fix/eval-prompt-alignment` 分支功能合入 v2.0.0 首 PR
+**src/pet_eval/**（v1 实现）
+- `cli.py` + `__main__.py`（旧 CLI 入口，被 `pet run` 取代）
+- `runners/eval_trained.py` / `runners/eval_audio.py`（顶层 runner 入口，逻辑融入 VLMEvaluator / AudioEvaluator plugin）
+- `runners/eval_quantized.py`（整文件删；Phase 3B 在 pet-quantize + pet-eval 之间按 QuantizedModelEvaluator plugin 重建）
+- `report/generate_report.py` 中的 wandb inline 调用段（整文件保留但抽掉 wandb，改由 ClearMLLogger 推送；v2 或直接删除本文件若不再需要独立 report）
+- `pyproject.toml` 的 `wandb` 依赖
+
+**scoped-in（分支）**
+- `fix/eval-prompt-alignment` 分支功能合入 v2.0.0 首 PR（不单独留存）
+
+> `src/pet_eval/{gate,inference}/` 两目录如被 plugin 内化后成为空壳，同步删除（由 PR 审计决定）。
 
 ### 3.2 保留（移入 plugin 内部）
 
-- 8 VLM metrics（bleu / rouge-l / meteor / bertscore / hallucination_rate / instruction_adherence / safety_score / mos）
-- audio_accuracy metric
-- 3 个 runner 核心逻辑（改写为 Evaluator plugin 内部方法）
+- **8 个现有 metric**（pet feeder 业务特定，非通用 VLM 基准）：
+  - `anomaly_recall` — 喂食异常事件召回率
+  - `calibration` — 置信度校准（ECE / brier）
+  - `kl_quantization` — 量化前后输出分布 KL 距离
+  - `latency` — 端到端推理延迟（RK3576 实测）
+  - `mood_correlation` — 生成情绪描述与人工标注相关性
+  - `narrative_quality` — 叙事质量（多维 rubric）
+  - `schema_compliance` — 输出 JSON 结构符合 pet-schema 比例
+  - `audio_accuracy` — PANNs 零样本分类 top-1（保留新增形态）
+- `runners/eval_audio.py` 核心逻辑 → AudioEvaluator plugin 内部方法
+- `runners/eval_trained.py` 核心逻辑（除 wandb 记录段）→ VLMEvaluator plugin 内部方法
 
 ### 3.3 新增 plugin 结构
 
@@ -191,16 +228,15 @@ gate:
 src/pet_eval/plugins/
 ├── _register.py
 ├── vlm_evaluator.py          # VLMEvaluator (BaseEvaluator)
-├── audio_evaluator.py        # AudioEvaluator
-└── metrics/                  # 9 metric 条目
-    ├── bleu.py
-    ├── rouge_l.py
-    ├── meteor.py
-    ├── bertscore.py
-    ├── hallucination_rate.py
-    ├── instruction_adherence.py
-    ├── safety_score.py
-    ├── mos.py
+├── audio_evaluator.py        # AudioEvaluator (BaseEvaluator)
+└── metrics/                  # 8 metric 逐文件（与 v1 同名，逐字迁移）
+    ├── anomaly_recall.py
+    ├── calibration.py
+    ├── kl_quantization.py
+    ├── latency.py
+    ├── mood_correlation.py
+    ├── narrative_quality.py
+    ├── schema_compliance.py
     └── audio_accuracy.py
 ```
 
@@ -229,7 +265,7 @@ Orchestrator 拿到 `(metrics, gate)` 后：
 ### 3.5 AudioEvaluator 设计
 
 - 零样本 PANNs（5 类：eating / drinking / vomiting / ambient / other）
-- 从 pet-train `audio/panns_zero_shot.py` import（跨仓 runtime dep，见 §5.3）
+- 从 pet-train `pet_train.audio.inference` import（v2 迁移后路径；v1 位于 `pet_train.audio_inference`，pet-train PR 先做文件 rename，见 §2.2）
 - 输入：`AudioClips` dataset plugin（pet-data v1.2.0 提供）
 - 指标：`audio_accuracy`（top-1）+ per-class precision/recall
 - 独立 gate：`min_audio_accuracy: 0.60`
@@ -250,9 +286,29 @@ Orchestrator 拿到 `(metrics, gate)` 后：
 eval:
   batch_size: 8
   max_samples: 500
-gate:
+
+gate:                              # release 默认（严苛）— 由 pet-eval 统一拥有
+  min_anomaly_recall: 0.80
+  max_calibration_ece: 0.10
+  max_kl_quantization: 0.05
+  max_latency_ms_p95: 2000
+  min_mood_correlation: 0.60
+  min_narrative_quality: 3.0       # 0-5 rubric 平均
+  min_schema_compliance: 0.95
   min_audio_accuracy: 0.60
+
+smoke:                             # smoke_tiny 专用放宽（§7.4）
+  min_anomaly_recall: 0.0
+  max_calibration_ece: 1.0
+  max_kl_quantization: 1.0
+  max_latency_ms_p95: 999999
+  min_mood_correlation: 0.0
+  min_narrative_quality: 0.0
+  min_schema_compliance: 0.0
+  min_audio_accuracy: 0.0
 ```
+
+> 具体阈值数值由 pet-eval v1 历史数据 + 业务团队签核确定；本 spec 只锁 key 名与命名空间。
 
 ---
 
@@ -260,18 +316,28 @@ gate:
 
 ### 4.1 matrix 2026.07
 
+对齐现 `compatibility_matrix.yaml` 结构（list of release objects）：
+
 ```yaml
 releases:
-  "2026.07":
+  # ... 2026.05-phase1 / 2026.05 / 2026.06 保持不动 ...
+
+  - release: "2026.07"
     pet_schema: "2.1.0"
-    pet_infra:  "2.3.0"
-    pet_data:   "1.2.0"
+    pet_infra: "2.3.0"
+    pet_data: "1.2.0"
     pet_annotation: "2.0.0"
-    pet_train:  "2.0.0"
-    pet_eval:   "2.0.0"
-    pet_quantize: "0.1.0"  # 3B 占位
-    pet_ota:      "0.1.0"  # 3B 占位
+    pet_train: "2.0.0"
+    pet_eval: "2.0.0"
+    # pet_quantize / pet_ota 延 Phase 3B 重构，2026.07 维持 placeholder
+    pet_quantize: "0.1.0"
+    pet_ota: "0.1.0"
+    clearml: ">=1.14,<2.0"
+    mmengine_lite: ">=0.10,<0.12"
+    hydra_core: ">=1.3,<1.4"
 ```
+
+> 2026.07 为 Phase 3A 发布锚。`clearml / mmengine_lite / hydra_core` 约束沿用 2026.06。
 
 ### 4.2 experiment_logger ABC + plugin
 
@@ -344,9 +410,11 @@ src/pet_infra/orchestrator/
 └── stage_executor.py        # in-process 调 Trainer/Evaluator/Converter
 ```
 
-**执行算法伪码**：
+**执行算法伪码**（复用 Phase 2 shipped `precompute_card_id(recipe_id, stage_name, config_sha)`）：
 
 ```python
+from pet_infra.recipe.card_id import precompute_card_id
+
 def pet_run(recipe_path: Path, resume: bool = True):
     cfg = hydra_compose(recipe_path)
     recipe = ExperimentRecipe.model_validate(cfg)
@@ -355,7 +423,9 @@ def pet_run(recipe_path: Path, resume: bool = True):
 
     prev_card = None
     for stage in dag.topological_order():
-        card_id = precompute_card_id(stage, recipe, prev_card)
+        config_sha = _hash_stage_config(stage, prev_card)  # §5.2 规则 4
+        card_id = precompute_card_id(recipe.id, stage.name, config_sha)
+
         if resume and cache.has(card_id):
             prev_card = cache.load(card_id)
             continue
@@ -364,6 +434,7 @@ def pet_run(recipe_path: Path, resume: bool = True):
         plugin = registry_for(stage).build(stage.plugin_name, stage.config)
         try:
             card = plugin.run(input_card=prev_card, recipe=recipe)
+            assert card.id == card_id, "plugin 必须把 card_id 写回 ModelCard.id"
         except Exception:
             logger.finish("failed")
             raise
@@ -372,7 +443,20 @@ def pet_run(recipe_path: Path, resume: bool = True):
         cache.save(card_id, card)
         logger.finish("success")
         prev_card = card
+
+
+def _hash_stage_config(stage, prev_card) -> str:
+    """sha256(canonical_json(stage_recipe_subtree) + prev_card.checkpoint_uri)"""
+    import hashlib, json
+    payload = json.dumps(stage.config, sort_keys=True, separators=(",", ":"))
+    payload += (prev_card.checkpoint_uri if prev_card else "")
+    return hashlib.sha256(payload.encode()).hexdigest()
 ```
+
+**关键点**：
+- `card_id` 在 stage 执行**前**由 orchestrator 算出，plugin 必须把它写回 `ModelCard.id`（非循环，因为 recipe_id + stage_name + config_sha 都在执行前已知）
+- 保留 Phase 2 已发布的 `precompute_card_id(recipe_id, stage_name, config_sha)` 签名不动（向前兼容）
+- `_hash_stage_config` 是 v2.3 新增的 helper，不改 card_id.py
 
 ### 4.6 Hydra multirun（-m）
 
@@ -438,19 +522,21 @@ recipe.yaml
               │    inputs:  DATASETS["pet_annotation.vision_annotations"]
               │             base_model: Qwen/Qwen2-VL-2B-Instruct
               │    plugin:  TRAINERS["llamafactory_sft"]
-              │    output:  ModelCard { gate_status: "pending",
+              │    output:  ModelCard { id: "{recipe_id}_train_{sha8}",
+              │                         gate_status: "pending",
               │                         checkpoint_uri: "s3://.../adapter/",
               │                         clearml_task_id: "7a3f..." }
-              │    cache:   {id}_train_{sha[:8]}
+              │    cache:   recipe.id = "{recipe_id}_train_{sha8}"
               │
               └→ Stage 2: eval
                    inputs:  ModelCard(from stage 1) + eval dataset
                    plugin:  EVALUATORS["vlm_evaluator"]
                    returns: (metrics, gate)
                    orchestrator:
+                     card.id = "{recipe_id}_eval_{sha8}"   # 同一公式，不同 stage_name
                      card.metrics.update(metrics)
                      card.gate_status = passed/failed
-                     cache.save({id}_eval_{sha[:8]}, card)
+                     cache.save(card.id, card)
                    logger.log_model_card(card)
 ```
 
@@ -472,11 +558,24 @@ recipe.yaml
 - 保证 pet-ota 只认 passed
 
 **规则 4：cache_key 构成公式固定**
+
+沿用 Phase 2 shipped `pet_infra.recipe.card_id.precompute_card_id(recipe_id, stage_name, config_sha)` 签名，config_sha 构成在 v2.3 明确定义：
+
+```python
+card_id = precompute_card_id(
+    recipe_id=recipe.id,
+    stage_name=stage.name,
+    config_sha=sha256(
+        canonical_json(stage.config)                        # 该 stage 完整 Hydra 配置
+        + (prev_card.checkpoint_uri if prev_card else "")   # 上游产物 URI
+    ).hexdigest(),
+)
+# 形式：{recipe_id}_{stage_name}_{sha[:8]}
 ```
-card_id = f"{card.id}_{stage_name}_{sha256(recipe_subtree + input_card.checkpoint_uri)[:8]}"
-```
-- 任何 override 变化 → sha 变化 → 必 miss
-- 保证 resume 正确性
+
+- 任何 override 变化 → stage.config canonical_json 变化 → sha 变化 → 必 miss
+- Plugin 必须把 orchestrator 算出的 `card_id` 写回 `ModelCard.id`（非循环：orchestrator 在 plugin 执行前就能算）
+- `canonical_json` = `json.dumps(..., sort_keys=True, separators=(",", ":"))` 保证跨进程稳定
 
 **规则 5：ClearML task_id 可选**
 - NullLogger / offline 场景 `task_id` 可为 None
@@ -488,8 +587,9 @@ card_id = f"{card.id}_{stage_name}_{sha256(recipe_subtree + input_card.checkpoin
 **代码**：
 ```python
 # pet-eval/src/pet_eval/plugins/audio_evaluator.py
-from pet_train.audio.panns_zero_shot import PANNsZeroShot  # runtime dep
+from pet_train.audio.inference import <ZeroShotClass>  # runtime dep
 ```
+（具体 class 名由 pet-train v2 rename PR 锁定；目前 v1 文件 `pet_train/audio_inference.py` 内含 PANNs MobileNetV2 AudioSet→5 类映射逻辑）
 
 **pyproject.toml**（pet-eval）：
 ```toml
@@ -678,22 +778,11 @@ pet-train / pet-eval 各自 CI：
 
 ### 7.4 Gate params 分命名空间
 
-```yaml
-# params.yaml
-gate:
-  min_bleu: 0.30              # release 默认
-  max_hallucination: 0.15
-  min_audio_accuracy: 0.60
-
-smoke:
-  min_bleu: 0.01              # smoke_tiny 专用
-  max_hallucination: 0.99
-  min_audio_accuracy: 0.10
-```
+见 §3.8 的 `gate:` + `smoke:` 两块 key 集。规则：
 
 - smoke recipe 引用 `smoke.*`
 - release recipe 引用 `gate.*`
-- CI 扫描 release recipe 禁止出现 `smoke.*` 或 `mode: offline`
+- CI 扫描 release recipe **禁止**出现 `smoke.*` 或 `experiment_logger.mode: offline`
 
 ### 7.5 ClearML 测试策略
 
@@ -705,9 +794,9 @@ smoke:
 
 ### 7.6 回归保护
 
-- pet-eval v1 的 8 个 metric 测试逐字迁移到 v2 plugin，确保数值无漂移
-- 新增 `test_v1_metric_backward_compat.py` 固定 fixture 金标值
-- pet-train v1 PANNs zero-shot 推理在 AudioEvaluator 新包装下产出一致（同 fixture 同 top-1）
+- pet-eval v1 的 8 个 metric（`anomaly_recall / calibration / kl_quantization / latency / mood_correlation / narrative_quality / schema_compliance / audio_accuracy`）测试逐字迁移到 v2 plugin 目录，确保数值无漂移
+- 新增 `test_v1_metric_backward_compat.py` 对每个 metric 固定一份 fixture 金标值（从 v1 测试产出取）
+- pet-train v1 `audio_inference.py` 在 v2 `pet_train/audio/inference.py` 新路径下产出一致（同 fixture 同 top-1 预测）
 
 ### 7.7 执行时长预算
 
@@ -724,19 +813,39 @@ smoke:
 
 ## 8. PR 拓扑与发布顺序
 
-### 8.1 依赖顺序
+### 8.1 依赖顺序（带 rc 锁避免 matrix 循环）
+
+pet-train `_register.py` guard 需指向 matrix 某一行，而 matrix 最终行需 pet-train tag 才能填。用 **rc 锚点**解循环：
 
 ```
-pet-infra v2.3.0 (PR chain)
-    ↓ release tag
-pet-train v2.0.0 (PR chain) ← 依赖 pet-infra v2.3.0 在 matrix
-    ↓ release tag
-pet-eval v2.0.0 (PR chain)  ← 依赖 pet-infra v2.3.0 + pet-train v2.0.0
-    ↓ release tag
-pet-infra matrix 2026.07 行最终提交（full version pins）
+Step 1  pet-infra v2.3.0-rc1  (PR chain merge)
+        + matrix "2026.07-rc" 行 (pet_train/eval 占位 "rc")
+        tag: v2.3.0-rc1
+
+Step 2  pet-train v2.0.0-rc1 (PR chain merge)
+        _register.py guard 指向 "matrix 2026.07-rc 或更高"
+        tag: v2.0.0-rc1
+
+Step 3  pet-eval v2.0.0 (PR chain merge)     ← pet-train rc 够用
+        依赖 pet-infra 2.3.0-rc1 + pet-train 2.0.0-rc1
+        tag: v2.0.0
+
+Step 4  pet-train v2.0.0  (打 final tag，代码不变)
+Step 5  pet-infra v2.3.0  (打 final tag + matrix "2026.07" 正式行 finalize)
 ```
 
-### 8.2 单仓 PR chain 模式
+Rc 与 final 之间代码**必须**相同（只是 tag 名不同）；否则 rc 阶段测过的 CI 对 final 无效。
+
+### 8.2 简化版本（如 rc 阻力大）
+
+如不愿走 rc 流程，替代方案：
+- pet-infra v2.3.0 合并时 matrix 2026.07 行先填 `pet_train/eval: "WIP"`（字符串占位，非 SemVer）
+- `_register.py` guard 对 "WIP" 识别为"开发中，放行 editable 本地安装，禁 wheel"
+- 全链 tag 后补 PR 把 "WIP" 改成 "2.0.0" finalize
+
+**PR planner 选择权**：选方案 1（rc）或方案 2（WIP）在 plan 阶段决定。
+
+### 8.3 单仓 PR chain 模式
 
 每仓按 feedback_pr_workflow：`feature/* → dev → main`
 
@@ -750,7 +859,7 @@ pet-infra matrix 2026.07 行最终提交（full version pins）
 
 pet-infra / pet-eval 同构。
 
-### 8.3 Rollback 策略
+### 8.4 Rollback 策略
 
 - 任一仓 PR failed gate → 不阻塞其他仓前置 PR；但发 tag 必须在 matrix 行完整前滚完
 - matrix 2026.07 行只在**全部三仓 tag 到位**后提交
@@ -760,14 +869,16 @@ pet-infra / pet-eval 同构。
 
 ## 9. North Star §0.2.1 自检（本 spec 预检）
 
-| 维度 | 自评 | 证据 |
-|------|------|------|
-| 可插拔性 | 5 | Trainer / Evaluator / Metric / Logger 全 plugin；新模型只加 plugin 不改 orchestrator |
-| 灵活性 | 4 | Hydra override + params.yaml 分 gate/smoke 命名空间；release recipe CI 约束 |
-| 可扩展性 | 4 | experiment_logger 为新 ABC，为未来 MLflow/TensorBoard 留口；DAG 未来可加 parallel launcher |
-| 可对比性 | 5 | 同 recipe -m sweep / 切不同 plugin 跑对比；metrics 格式统一；cache_key 含所有 override |
+**及格线：每维 ≥ 3 分（与 §0.3 和 PHASE_DOD_TEMPLATE §5 一致）。<3 rework。**
 
-Phase 3A 结束时按 PHASE_DOD_TEMPLATE §5 再次逐项勾选 + 给证据。
+| 维度 | 自评 | 具体证据（section 引用）|
+|------|------|------|
+| 可插拔性（Pluggability） | 5 | §1.3 registry 表（Trainer/Evaluator/Metric/Logger 全 plugin）；§2.3 pet-train plugin 目录；§3.3 pet-eval plugin 目录；§4.2 experiment_logger ABC；§5.3 跨仓 import 样板。新模型家族只加 1 plugin 文件 + `_register.py` entry 即可，不改 orchestrator 代码。 |
+| 灵活性（Flexibility） | 4 | §4.3 ClearML 三档 mode 纯 config；§4.6 Hydra `-m` sweep 无代码改；§3.8 gate/smoke 分命名空间；§7.4 CI 扫描禁 release 用 smoke key。减 1 分：params.yaml vs recipe override 双轨，用户仍需记住 "三层优先级"（params 默认 → params smoke → recipe override）。 |
+| 可扩展性（Extensibility） | 4 | §4.2 experiment_logger 新 ABC 为 MLflow/TensorBoard/自研 logger 留口；§4.5 DAG 拓扑排序支持任意 stage 数；§4.6 sequential launcher 留未来 joblib/submitit 替换位。减 1 分：CONVERTERS / STORAGE registry 3A 不触碰，Phase 3B 可能撞出 orchestrator 接口改动。 |
+| 可对比性（Comparability） | 5 | §4.6 `pet run -m train.lr=...` 一行扫 N trial；§5.2 rule 4 cache_key 含全部 override 保证独立 card；§3.4 Evaluator 返回统一 `(metrics, gate)` 格式；§5.4 ClearML 3 个 task 挂同 experiment parent；§7.6 v1→v2 metric 数值无漂移 fixture 锁。 |
+
+**最低分 4 ≥ 3，通过。**Phase 3A 结束时按 PHASE_DOD_TEMPLATE §5 再自检一次并附实证。
 
 ---
 
@@ -780,7 +891,10 @@ Phase 3A 结束时按 PHASE_DOD_TEMPLATE §5 再次逐项勾选 + 给证据。
 | cache_key 哈希不稳定（跨进程） | 中 | 高 | 单测固定 recipe → 固定 sha；哈希基于 sorted JSON serialization |
 | PANNs 跨仓 import 在 pet-eval 装不上 pet-train | 中 | 中 | peer-dep §11 guard + 四步装序 + CI 装序测试 |
 | Hydra multirun sweep 中单 trial OOM 污染下游 | 低 | 中 | 每 trial 独立进程空间（LlamaFactory run_sft 入口保证）；失败 trial 不写 cache |
-| v1 → v2 metric 数值漂移 | 中 | 高 | `test_v1_metric_backward_compat.py` fixture 金标值锁定 |
+| v1 → v2 metric 数值漂移 | 中 | 高 | `test_v1_metric_backward_compat.py` fixture 金标值锁定（覆盖 §3.2 八个 metric）|
+| MPS LoRA float32 fallback（smoke_mps 路径） | 中 | 中 | smoke_mps 显式 `attn_implementation=eager` + bf16 要求 M2+；失败时降级为"该档 CI 仅供本地开发，非 PR gate"（与 §7.1 定位一致）|
+| self-hosted ClearML CI 资源限制 | 中 | 中 | release-smoke 在 cron 跑（非 PR gate），单次起停；若 GitHub Actions 资源不够，退到 SaaS 档 |
+| Phase 2 `precompute_card_id` 签名被扩改破坏 | 低 | 中 | v2.3 只新增 `_hash_stage_config` helper；`precompute_card_id` 签名冻结，单测锁定 |
 
 ---
 
@@ -795,6 +909,7 @@ Phase 3A 结束时按 PHASE_DOD_TEMPLATE §5 再次逐项勾选 + 给证据。
 
 ### 11.2 CI 全绿
 - [ ] plugin-discovery / integration-smoke / compatibility-matrix-smoke / release-smoke 4 条 workflow
+- [ ] release-smoke 至少一次跑通 self-hosted ClearML stack（docker-compose 起 Server+Mongo+Elastic+Redis+File Server，真连真写）
 
 ### 11.3 测试
 - [ ] pet-train 60+ tests / pet-eval 70+ tests / pet-infra 120+ tests 通过
@@ -808,7 +923,7 @@ Phase 3A 结束时按 PHASE_DOD_TEMPLATE §5 再次逐项勾选 + 给证据。
 - [ ] §11 peer-dep 新增跨仓 import 样板子节
 
 ### 11.5 North Star §0.2.1 自检
-- [ ] 四维度各 ≥ 3 分，证据附于 Phase 3A retrospective
+- [ ] 四维度各 **≥ 3** 分（<3 为 rework，与 §0.3 一致），证据附于 Phase 3A retrospective
 
 ### 11.6 用户可验证
 - [ ] `pet run recipes/sft_qwen2vl_2b.yaml` 本地 MPS 可跑通

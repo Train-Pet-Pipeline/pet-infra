@@ -15,3 +15,27 @@ api_client:
 store:
   pragma_journal_mode: "wal"
   pragma_foreign_keys: true
+
+eval:
+  batch_size: 8
+  max_samples: 500
+
+gate:
+  min_anomaly_recall: 0.80
+  max_calibration_ece: 0.10
+  max_kl_quantization: 0.05
+  max_latency_ms_p95: 2000
+  min_mood_correlation: 0.60
+  min_narrative_quality: 3.0
+  min_schema_compliance: 0.95
+  min_audio_accuracy: 0.60
+
+smoke:
+  min_anomaly_recall: 0.0
+  max_calibration_ece: 1.0
+  max_kl_quantization: 1.0
+  max_latency_ms_p95: 999999
+  min_mood_correlation: 0.0
+  min_narrative_quality: 0.0
+  min_schema_compliance: 0.0
+  min_audio_accuracy: 0.0

@@ -82,4 +82,16 @@ def compose_recipe(path: str | Path) -> ExperimentRecipe:
     resolved = OmegaConf.to_container(cfg, resolve=True)
     assert isinstance(resolved, dict)
     recipe_section = resolved["recipe"] if "recipe" in resolved else resolved
+    # Phase 3B: strip compose-time variables (e.g. smoke_tier) that are not
+    # ExperimentRecipe fields — these are used for OmegaConf interpolation only
+    # and must not be passed to Pydantic (extra='forbid').
+    known_fields = set(ExperimentRecipe.model_fields)
+    recipe_section = {k: v for k, v in recipe_section.items() if k in known_fields}
+    # Phase 3B: fragments use dict-keyed stages so OmegaConf can deep-merge them.
+    # Convert dict[str, dict] → list[dict] with `name` injected from the key
+    # before passing to Pydantic (which requires list[RecipeStage]).
+    if isinstance(recipe_section.get("stages"), dict):
+        recipe_section["stages"] = [
+            {"name": name, **body} for name, body in recipe_section["stages"].items()
+        ]
     return ExperimentRecipe.model_validate(recipe_section)

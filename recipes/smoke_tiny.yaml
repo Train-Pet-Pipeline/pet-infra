@@ -1,24 +1,19 @@
-recipe:
-  recipe_id: smoke_tiny
-  description: "Phase 3A PR gate — tiny_test trainer, CPU-only, <2 min"
-  scope: single_repo
-  owner_repo: pet-infra
-  schema_version: "2.0.0"
-  stages:
-    - name: train
-      component_registry: trainers
-      component_type: tiny_test
-      inputs: {}
-      config_path: configs/smoke/tiny_train.yaml
-      depends_on: []
-  variations: []
-  produces:
-    - smoke_tiny_model
-  default_storage: local
-  required_plugins:
-    - pet_train
+defaults:
+  - _base/smoke_base
+  - trainer/tiny_test
+  - converter/noop_converter
+  - ota/local_backend
 
-experiment_logger:
-  name: clearml
-  mode: offline
-  on_unavailable: fallback_null
+recipe_id: smoke_tiny
+description: "PR-CI smoke; tiny trainer + noop converter + local OTA"
+scope: single_repo
+schema_version: "2.0.0"
+smoke_tier: tiny
+
+# Override deploy.depends_on: tiny skips eval_quant, so deploy follows quantize directly
+stages:
+  deploy:
+    depends_on: [quantize]
+
+produces:
+  - smoke_tiny_edge_artifact

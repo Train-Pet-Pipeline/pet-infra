@@ -1,0 +1,8 @@
+# @package _global_
+stages:
+  eval_quant:
+    component_registry: evaluators
+    component_type: quantized_vlm_evaluator
+    inputs: {}
+    config_path: configs/smoke/${smoke_tier}_eval_quant.yaml
+    depends_on: [quantize]

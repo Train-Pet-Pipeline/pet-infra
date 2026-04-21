@@ -1,0 +1,9 @@
+# @package _global_
+# Base defaults shared by all smoke/release recipes.
+# recipe_id, description, scope, and schema_version are recipe-specific;
+# each top-level recipe must supply them.
+owner_repo: pet-infra
+default_storage: local
+variations: []
+required_plugins: []
+smoke_tier: mps  # default fallback for OmegaConf interpolation; recipes override

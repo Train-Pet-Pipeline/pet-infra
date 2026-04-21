@@ -1,4 +1,4 @@
-.PHONY: setup test lint clean
+.PHONY: setup test lint clean clearml-up clearml-down
 
 setup:
 	python -m pip install -e ".[dev,api,sync]"
@@ -12,3 +12,9 @@ lint:
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache dist/ *.egg-info
 	find . -type d -name __pycache__ -exec rm -rf {} +
+
+clearml-up:
+	cd docker/clearml && docker compose up -d
+
+clearml-down:
+	cd docker/clearml && docker compose down

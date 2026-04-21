@@ -2137,6 +2137,11 @@ P95 延迟超标：
 ✗ 让 narrative 包含历史对比信息（"今天比昨天少吃了"）
 ```
 
+### 8.6 Phase DoD 自检
+
+任何 Phase/子 Phase 结束前按 `docs/PHASE_DOD_TEMPLATE.md` 逐项勾选。
+North Star §0.2.1 四维度（pluggability / flexibility / extensibility / comparability）各 ≥ 3 分（<3 rework）。
+
 ---
 
 ## 9. Phase 1 Foundation 运行时（pet-infra 2.0.0）
@@ -2459,6 +2464,20 @@ python -c "import pet_infra; assert pet_infra.__version__.startswith(('2.',))"
 
 **pet-infra 自身 CI**（`plugin-discovery.yml` 等）：用 `pip install -e ".[dev]"` 装自身，无需上述四步。
 
+**ClearML 凭据注入（使用 ClearMLLogger 的 CI 或运行时）**：
+
+```yaml
+# 示例：.github/workflows/your-workflow.yml
+- name: Run with ClearML
+  env:
+    CLEARML_API_HOST: ${{ secrets.CLEARML_API_HOST }}   # self-hosted URL 或 SaaS https://api.clear.ml
+    CLEARML_API_ACCESS_KEY: ${{ secrets.CLEARML_API_ACCESS_KEY }}
+    CLEARML_API_SECRET_KEY: ${{ secrets.CLEARML_API_SECRET_KEY }}
+  run: pet run recipes/your_recipe.yaml
+```
+
+`experiment_logger` 以 `mode: saas|self_hosted` 搭配 `on_unavailable: strict|fallback_null|retry` 配置；离线 CI（`mode: offline`）无需凭据。见 `src/pet_infra/experiment_logger/clearml_logger.py`。
+
 ### 11.5 开发环境
 
 本地开发使用共享 conda 环境 `pet-pipeline`（规范来源：`feedback_env_naming`）：
@@ -2470,6 +2489,45 @@ conda activate pet-pipeline
 该环境已预装 pet-infra 最新 dev 版本，无需手动 `pip install pet-infra`。**所有仓库开发均在此环境下进行，不创建 per-repo 独立 conda env。**
 
 CI 流水线每次从干净环境全新安装，按 §11.4 装序保证环境一致性。
+
+### 11.6 跨仓插件依赖样板
+
+部分 plugin 跨仓直接 runtime import 另一仓的实现（典型案例：`pet-eval` 的 `AudioEvaluator` 需要
+`pet-train` 的 PANNs 零样本推理实现）。规则：
+
+**pyproject.toml（以 pet-eval 为例）**：
+```toml
+dependencies = [
+    "pet-schema",      # 无 pin（matrix 行锁定）
+    "pet-train",       # 跨仓 runtime dep，无 pin
+    # pet-infra 按 §11 peer-dep 不列
+    # ...
+]
+```
+
+**`_register.py` fail-fast guard**：
+```python
+def register_all():
+    try:
+        import pet_infra   # peer-dep guard
+        import pet_train   # 跨仓 runtime guard
+    except ImportError as e:
+        raise RuntimeError(
+            f"pet-eval requires pet-infra + pet-train runtime. "
+            f"Install via matrix row 2026.07. Missing: {e.name}"
+        ) from e
+```
+
+**CI 装序（§11.4 四步 + 1 被依赖 plugin 仓）**：
+```
+1. pip install 'pet-infra @ git+…@<matrix_tag>'
+2. pip install 'pet-train @ git+…@<matrix_tag>'       # 先装被依赖 plugin 仓
+3. pip install -e . --no-deps                          # editable 下游
+4. pip install -e '.[dev]'                             # 补 dev extras
+5. python -c "import pet_infra, pet_train; …"         # 版本断言
+```
+
+具体 class/模块名由 pet-train v2 rename PR 锁定（`src/pet_train/audio/inference.py`，搬自 v1 的 `src/pet_train/audio_inference.py`）。
 
 ---
 

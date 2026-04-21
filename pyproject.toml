@@ -16,6 +16,7 @@ dependencies = [
     "hydra-zen>=0.15,<0.17",
     "click>=8.1,<9.0",
     "networkx>=3.2,<4.0",
+    "clearml>=1.14,<2.0",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +42,7 @@ pet = "pet_infra.cli:main"
 pet_infra = "pet_infra._register:register_all"
 
 [project.entry-points."pet_infra.experiment_loggers"]
-# clearml = "pet_infra.experiment_logger.clearml_logger:ClearMLLogger"  # PR #P0-C adds this
+clearml = "pet_infra.experiment_logger.clearml_logger:ClearMLLogger"
 
 [tool.setuptools.packages.find]
 where = ["src"]

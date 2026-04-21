@@ -18,7 +18,8 @@
 8. [Claude Code 开发指引](#8-claude-code-开发指引)
 9. [Phase 1 Foundation 运行时（pet-infra 2.0.0）](#9-phase-1-foundation-运行时pet-infra-200)
 10. [Phase 2 Data & Annotation 运行时（pet-data 1.1.0, pet-annotation 1.1.0）](#10-phase-2-data--annotation-运行时pet-data-110-pet-annotation-110)
-11. [附录：版本管理、风险、术语表](#11-附录)
+11. [依赖治理与 peer-dep 约定](#11-依赖治理与-peer-dep-约定)
+12. [附录：版本管理、风险、术语表](#12-附录)
 
 ---
 

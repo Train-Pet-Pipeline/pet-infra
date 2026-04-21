@@ -1,0 +1,24 @@
+name: install-order-smoke
+on:
+  pull_request:
+    paths:
+      - 'docs/DEVELOPMENT_GUIDE.md'
+      - '.github/workflows/install-order-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pet-infra (editable, current PR code)
+        run: pip install -e ".[dev]"
+      - name: Assert import + version
+        run: |
+          python -c "import pet_infra; print(pet_infra.__version__)"
+          python -c "import pet_infra; assert pet_infra.__version__.startswith('2.')"
+      - name: Smoke: list-plugins
+        run: pet list-plugins --json

@@ -5,17 +5,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
 
 import yaml
-from pet_schema.recipe import ExperimentRecipe
 from pet_schema.model_card import ModelCard
 
 from pet_infra.experiment_logger.factory import build_experiment_logger
 from pet_infra.recipe.card_id import precompute_card_id
 from pet_infra.recipe.compose import compose_recipe
-from .dag import build_dag
+
 from .cache import StageCache
+from .dag import build_dag
 from .hash import hash_stage_config
 from .stage_executor import execute_stage
 
@@ -29,7 +28,7 @@ class GateFailedError(RuntimeError):
 def pet_run(
     recipe_path: Path,
     resume: bool = True,
-    cache_root: Optional[Path] = None,
+    cache_root: Path | None = None,
 ) -> ModelCard:
     """Execute a recipe's stage DAG serially with resume-from-cache.
 
@@ -67,8 +66,8 @@ def pet_run(
     cache = StageCache(root=cache_root or Path.home() / ".pet-cache")
 
     # 4. Walk DAG
-    prev_card: Optional[ModelCard] = None
-    last_card: Optional[ModelCard] = None
+    prev_card: ModelCard | None = None
+    last_card: ModelCard | None = None
 
     for stage in dag.topological_order():
         # Load stage config from filesystem path (§ adaptation 4)

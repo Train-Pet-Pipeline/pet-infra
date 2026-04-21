@@ -1,8 +1,4 @@
 # tests/orchestrator/test_cache.py
-import pytest
-import tempfile
-import json
-from pathlib import Path
 from pet_infra.orchestrator.cache import StageCache
 
 

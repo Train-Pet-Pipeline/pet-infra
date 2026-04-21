@@ -1,0 +1,36 @@
+name: release-smoke
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs daily at 04:00 UTC
+    - cron: "0 4 * * *"
+  push:
+    tags: ["v*"]
+jobs:
+  smoke-small:
+    # NOTE: Ideally this runs on [self-hosted, gpu] for real CUDA smoke; no self-hosted
+    # GPU runner is provisioned yet. Until then this job validates recipe composition
+    # and plugin registration only (--dry-run equivalent). Upgrade runs-on when
+    # GPU runners are available in the org.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Configure git for private repos
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1
+      - name: Install pet-infra + pet-train + pet-eval (matrix 2026.07-rc pins)
+        run: |
+          pip install -e ".[dev]"
+          pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.0.0-rc1'
+          pip install 'pet-eval @ git+https://github.com/Train-Pet-Pipeline/pet-eval@v2.0.0-rc1'
+      - name: Assert plugins register
+        run: |
+          python -c "from pet_train.plugins._register import register_all as r1; r1(); print('pet_train plugins registered OK')"
+          python -c "from pet_eval.plugins._register import register_all as r1; r1(); print('pet_eval plugins registered OK')"
+      - name: Validate smoke_small recipe (no GPU available in CI; validates composition + preflight)
+        run: pet validate --recipe=recipes/smoke_small.yaml

@@ -1,0 +1,7 @@
+# TinyTestTrainer kwargs — CPU-only PR gate, <2 min
+output_dir: /tmp/smoke_tiny
+max_steps: 10
+hidden_dim: 128
+input_dim: 64
+batch_size: 4
+lr: 1.0e-3

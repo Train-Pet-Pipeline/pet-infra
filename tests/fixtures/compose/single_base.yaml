@@ -1,0 +1,3 @@
+defaults:
+  - base_a
+recipe_id: test_single

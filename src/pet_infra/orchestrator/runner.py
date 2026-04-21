@@ -17,13 +17,10 @@ from pet_infra.recipe.compose import compose_recipe
 from .cache import StageCache
 from .dag import build_dag
 from .hash import hash_stage_config
+from .hooks import GateFailedError  # noqa: F401 — re-exported for callers
 from .stage_executor import execute_stage
 
 log = logging.getLogger(__name__)
-
-
-class GateFailedError(RuntimeError):
-    """Raised when an evaluator stage's ModelCard has gate_status='failed'."""
 
 
 def pet_run(

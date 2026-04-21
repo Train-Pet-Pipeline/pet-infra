@@ -35,7 +35,6 @@ def _make_card(card_id: str, task: str, gate_status: str = "pending") -> ModelCa
     )
 
 
-@TRAINERS.register_module(name="gate_train", force=True)
 class GateTrainer:
     """Fake trainer for gate test."""
 
@@ -49,7 +48,6 @@ class GateTrainer:
         return _make_card(card_id="PLACEHOLDER", task="sft", gate_status="pending")
 
 
-@EVALUATORS.register_module(name="gate_eval_fail", force=True)
 class GateEvalFail:
     """Fake evaluator that returns gate_status='failed'."""
 
@@ -63,7 +61,6 @@ class GateEvalFail:
         return _make_card(card_id="PLACEHOLDER", task="eval", gate_status="failed")
 
 
-@CONVERTERS.register_module(name="gate_quantize", force=True)
 class GateQuantize:
     """Fake converter — should NEVER be called when gate fails."""
 
@@ -75,6 +72,18 @@ class GateQuantize:
         """Record call and return card."""
         CALL_LOG.append("quantize")
         return _make_card(card_id="PLACEHOLDER", task="quantize")
+
+
+@pytest.fixture(autouse=True)
+def _register_fakes():
+    """Register fake plugins before each test and unregister after."""
+    TRAINERS.register_module(name="gate_train", module=GateTrainer, force=True)
+    EVALUATORS.register_module(name="gate_eval_fail", module=GateEvalFail, force=True)
+    CONVERTERS.register_module(name="gate_quantize", module=GateQuantize, force=True)
+    yield
+    TRAINERS.module_dict.pop("gate_train", None)
+    EVALUATORS.module_dict.pop("gate_eval_fail", None)
+    CONVERTERS.module_dict.pop("gate_quantize", None)
 
 
 @pytest.fixture(autouse=True)

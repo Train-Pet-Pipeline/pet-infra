@@ -26,7 +26,7 @@ class StageCache:
         """Return True if a cache entry file exists (may still be corrupt)."""
         return self._path(key).exists()
 
-    def load(self, key: str):
+    def load(self, key: str) -> dict | None:
         """Load a cached dict by key, returning None on corrupt or missing entry."""
         try:
             return json.loads(self._path(key).read_text())

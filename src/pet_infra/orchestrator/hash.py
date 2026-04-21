@@ -3,9 +3,10 @@
 from __future__ import annotations
 import hashlib
 import json
+from typing import Any
 
 
-def hash_stage_config(stage, prev_card) -> str:
+def hash_stage_config(stage: Any, prev_card: Any) -> str:
     """Compute a stable sha256 hash of a stage's config plus the previous card URI.
 
     Args:

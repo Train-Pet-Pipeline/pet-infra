@@ -4,6 +4,14 @@ on:
     paths:
       - 'docs/DEVELOPMENT_GUIDE.md'
       - '.github/workflows/install-order-smoke.yml'
+  push:
+    branches:
+      - 'feature/**'
+      - 'dev'
+      - 'main'
+    paths:
+      - 'docs/DEVELOPMENT_GUIDE.md'
+      - '.github/workflows/install-order-smoke.yml'
   workflow_dispatch:
 
 jobs:

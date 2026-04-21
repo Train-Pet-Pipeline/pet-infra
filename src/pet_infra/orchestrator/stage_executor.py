@@ -1,6 +1,7 @@
 # src/pet_infra/orchestrator/stage_executor.py
 """Dispatch a RecipeStage to the appropriate plugin registry and execute it."""
 from __future__ import annotations
+from typing import Any
 
 from pet_infra.registry import TRAINERS, EVALUATORS, CONVERTERS
 
@@ -12,7 +13,7 @@ STAGE_REGISTRIES = {
 }
 
 
-def execute_stage(stage, recipe, prev_card, card_id):
+def execute_stage(stage: Any, recipe: Any, prev_card: Any, card_id: str) -> Any:
     """Instantiate the plugin for ``stage`` and invoke its ``.run()`` method.
 
     Args:

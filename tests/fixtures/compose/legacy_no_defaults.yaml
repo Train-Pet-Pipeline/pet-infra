@@ -1,0 +1,10 @@
+recipe_id: legacy
+description: no defaults key used
+owner_repo: legacy-owner
+scope: single_repo
+schema_version: "2.0.0"
+stages: []
+variations: []
+produces: []
+default_storage: local
+required_plugins: []

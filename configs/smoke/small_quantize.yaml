@@ -1,0 +1,5 @@
+# OmegaConf interpolations below are resolved when params.yaml is merged into
+# the stage config context by the orchestrator (deferred to a later PR).
+# Until then these remain as literal strings when loaded standalone.
+target_platform: ${params.quantize.rknn.target_platform}
+optimization_level: ${params.quantize.rknn.optimization_level}

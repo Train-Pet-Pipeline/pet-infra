@@ -1,6 +1,7 @@
 # src/pet_infra/orchestrator/dag.py
 """Stage-agnostic topological sort + cycle detection for the orchestrator DAG."""
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 

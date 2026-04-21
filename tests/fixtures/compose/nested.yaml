@@ -1,0 +1,5 @@
+defaults:
+  - base_a
+  - sub/override
+recipe_id: test_nested
+description: overridden

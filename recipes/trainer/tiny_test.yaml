@@ -1,0 +1,8 @@
+# @package _global_
+stages:
+  train:
+    component_registry: trainers
+    component_type: tiny_test
+    inputs: {}
+    config_path: configs/smoke/${smoke_tier}_train.yaml
+    depends_on: []

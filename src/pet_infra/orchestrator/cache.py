@@ -1,6 +1,7 @@
 # src/pet_infra/orchestrator/cache.py
 """StageCache: filesystem JSON cache with corrupt-as-miss behavior (§5.2 rule 4)."""
 from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path

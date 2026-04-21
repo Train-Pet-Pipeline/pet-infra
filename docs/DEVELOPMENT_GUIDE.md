@@ -2478,6 +2478,42 @@ python -c "import pet_infra; assert pet_infra.__version__.startswith(('2.',))"
 
 `experiment_logger` 以 `mode: saas|self_hosted` 搭配 `on_unavailable: strict|fallback_null|retry` 配置；离线 CI（`mode: offline`）无需凭据。见 `src/pet_infra/experiment_logger/clearml_logger.py`。
 
+### §11.4.3 Phase 3B pet-eval 6-step peer-dep install
+
+pet-eval 2.1.0 adds pet-quantize as a runtime peer (for QuantizedVlmEvaluator
+lazy import). CI install order (updates Phase 3A 5-step to 6-step):
+
+```bash
+# Step 1: install pet-infra peer (pinned to matrix row)
+pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.4.0-rc1'
+
+# Step 2: install pet-train peer (cross-repo runtime dep)
+pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.0.0'
+
+# Step 3: install pet-quantize peer  ← NEW vs Phase 3A 5-step
+pip install 'pet-quantize @ git+https://github.com/Train-Pet-Pipeline/pet-quantize@v2.0.0-rc1'
+
+# Step 4: editable install without re-resolving peers
+pip install -e . --no-deps
+
+# Step 5: re-resolve dev extras (pip only fills missing third-party tools)
+pip install -e ".[dev]"
+
+# Step 6: version assertion
+python -c "
+import pet_infra, pet_train, pet_quantize, pet_eval
+assert pet_infra.__version__ == '2.4.0-rc1', pet_infra.__version__
+assert pet_train.__version__ == '2.0.0', pet_train.__version__
+assert pet_quantize.__version__ == '2.0.0-rc1', pet_quantize.__version__
+assert pet_eval.__version__ == '2.1.0-rc1', pet_eval.__version__
+"
+```
+
+`<matrix_tag>` values are taken from the `2026.08-rc` row in
+`pet-infra/docs/compatibility_matrix.yaml`. See §11.4.1 for the 3-step trivial
+case and §11.4 base template for the general 4-step pattern. The 5-step
+cross-repo plugin pattern (pet-eval + pet-train) is documented in §11.6.
+
 ### 11.5 开发环境
 
 本地开发使用共享 conda 环境 `pet-pipeline`（规范来源：`feedback_env_naming`）：

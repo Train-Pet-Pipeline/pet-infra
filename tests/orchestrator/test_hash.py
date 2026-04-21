@@ -1,5 +1,6 @@
 # tests/orchestrator/test_hash.py
 from types import SimpleNamespace
+
 from pet_infra.orchestrator.hash import hash_stage_config
 
 

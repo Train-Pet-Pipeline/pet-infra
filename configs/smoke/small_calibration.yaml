@@ -1,0 +1,6 @@
+# OmegaConf interpolations below are resolved when params.yaml is merged into
+# the stage config context by the orchestrator (deferred to a later PR).
+# Until then these remain as literal strings when loaded standalone.
+num_samples: ${params.quantize.calibration.num_samples}
+batch_size: ${params.quantize.calibration.batch_size}
+source_uri: ${params.dataset.vision.calibration_uri:/tmp/stub-calibration}

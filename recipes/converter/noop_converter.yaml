@@ -1,0 +1,8 @@
+# @package _global_
+stages:
+  quantize:
+    component_registry: converters
+    component_type: noop_converter
+    inputs: {}
+    config_path: configs/smoke/${smoke_tier}_quantize.yaml
+    depends_on: [train]

@@ -46,7 +46,7 @@ class ClearMLLogger(ExperimentLogger):
         self.api_host = api_host
         self.on_unavailable = on_unavailable
         self.project = project
-        self._task = None
+        self._task: Task | None = None
         self._retry_wait = (
             retry_wait if retry_wait is not None else wait_exponential(multiplier=1, min=1, max=16)
         )

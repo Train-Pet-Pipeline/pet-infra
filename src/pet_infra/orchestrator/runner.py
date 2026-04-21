@@ -3,33 +3,31 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
 
 import yaml
-from pet_schema.recipe import ExperimentRecipe
 from pet_schema.model_card import ModelCard
 
 from pet_infra.experiment_logger.factory import build_experiment_logger
 from pet_infra.recipe.card_id import precompute_card_id
 from pet_infra.recipe.compose import compose_recipe
-from .dag import build_dag
+
 from .cache import StageCache
+from .dag import build_dag
 from .hash import hash_stage_config
+from .hooks import GateFailedError  # noqa: F401 — re-exported for callers
 from .stage_executor import execute_stage
 
 log = logging.getLogger(__name__)
 
 
-class GateFailedError(RuntimeError):
-    """Raised when an evaluator stage's ModelCard has gate_status='failed'."""
-
-
 def pet_run(
     recipe_path: Path,
     resume: bool = True,
-    cache_root: Optional[Path] = None,
+    cache_root: Path | None = None,
+    overrides: Sequence[str] = (),
 ) -> ModelCard:
     """Execute a recipe's stage DAG serially with resume-from-cache.
 
@@ -46,6 +44,9 @@ def pet_run(
         recipe_path: Path to the recipe YAML file.
         resume: If True, skip stages whose card is already in cache.
         cache_root: Root directory for stage cache. Defaults to ``~/.pet-cache``.
+        overrides: Hydra-style list of "key.path=value" strings applied to the
+            recipe before validation. Used by the multirun launcher to apply
+            sweep combo overrides.
 
     Returns:
         The last stage's ModelCard.
@@ -56,7 +57,7 @@ def pet_run(
     """
     # 1. Compose YAML → ExperimentRecipe
     recipe_path = Path(recipe_path).resolve()
-    recipe, resolved_dict, _config_sha = compose_recipe(recipe_path)
+    recipe, resolved_dict, _config_sha = compose_recipe(recipe_path, overrides=overrides)
 
     # 2. Logger (key is "name" not "type" — factory.py convention)
     logger_cfg = resolved_dict.get("experiment_logger", {"name": "null"})
@@ -67,8 +68,8 @@ def pet_run(
     cache = StageCache(root=cache_root or Path.home() / ".pet-cache")
 
     # 4. Walk DAG
-    prev_card: Optional[ModelCard] = None
-    last_card: Optional[ModelCard] = None
+    prev_card: ModelCard | None = None
+    last_card: ModelCard | None = None
 
     for stage in dag.topological_order():
         # Load stage config from filesystem path (§ adaptation 4)

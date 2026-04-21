@@ -39,3 +39,25 @@ smoke:
   min_narrative_quality: 0.0
   min_schema_compliance: 0.0
   min_audio_accuracy: 0.0
+
+quantize:
+  calibration:
+    num_samples: 64
+    batch_size: 8
+  rkllm:
+    target_platform: rk3576
+    quantized_dtype: w4a16
+  rknn:
+    target_platform: rk3576
+    optimization_level: 3
+
+ota:
+  local_backend:
+    storage_root: ./ota_artifacts
+
+# Phase 3B gate thresholds for post-quantization hardware evaluation.
+# These extend the existing gate: block above with quantize-specific keys.
+gate_quantize:
+  max_latency_ms_p95: 500
+  min_quantized_accuracy: 0.85
+  max_kl_divergence: 0.1

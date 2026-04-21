@@ -1,0 +1,11 @@
+defaults:
+  - smoke_small
+
+recipe_id: release
+description: "Production release pipeline; inherits smoke_small full DAG"
+scope: cross_repo
+schema_version: "2.0.0"
+smoke_tier: small
+
+produces:
+  - edge_artifact_rkllm_release

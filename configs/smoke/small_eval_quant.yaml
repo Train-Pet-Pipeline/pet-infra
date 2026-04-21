@@ -1,0 +1,2 @@
+metrics: [vlm_accuracy, kl_divergence]
+device: cuda

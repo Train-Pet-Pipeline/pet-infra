@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +30,7 @@ def pet_run(
     recipe_path: Path,
     resume: bool = True,
     cache_root: Path | None = None,
+    overrides: Sequence[str] = (),
 ) -> ModelCard:
     """Execute a recipe's stage DAG serially with resume-from-cache.
 
@@ -45,6 +47,9 @@ def pet_run(
         recipe_path: Path to the recipe YAML file.
         resume: If True, skip stages whose card is already in cache.
         cache_root: Root directory for stage cache. Defaults to ``~/.pet-cache``.
+        overrides: Hydra-style list of "key.path=value" strings applied to the
+            recipe before validation. Used by the multirun launcher to apply
+            sweep combo overrides.
 
     Returns:
         The last stage's ModelCard.
@@ -55,7 +60,7 @@ def pet_run(
     """
     # 1. Compose YAML → ExperimentRecipe
     recipe_path = Path(recipe_path).resolve()
-    recipe, resolved_dict, _config_sha = compose_recipe(recipe_path)
+    recipe, resolved_dict, _config_sha = compose_recipe(recipe_path, overrides=overrides)
 
     # 2. Logger (key is "name" not "type" — factory.py convention)
     logger_cfg = resolved_dict.get("experiment_logger", {"name": "null"})

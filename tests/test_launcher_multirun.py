@@ -111,3 +111,54 @@ def test_single_axis_single_value_one_run(tmp_path: Path, monkeypatch: pytest.Mo
         results_root=tmp_path / "out",
     )
     assert len(results) == 1
+
+
+def test_overrides_propagate_to_compose_recipe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify that sweep_params overrides actually reach pet_run as Hydra-style strings."""
+    monkeypatch.setenv("PET_MULTIRUN_SYNC", "1")
+    captured: list[list[str]] = []
+
+    def fake_pet_run(
+        recipe_path,
+        resume=True,
+        cache_root=None,
+        overrides=(),
+    ):
+        captured.append(list(overrides))
+        from datetime import datetime
+
+        from pet_schema.model_card import ModelCard
+
+        return ModelCard(
+            id="test-id",
+            version="0.1.0",
+            modality="vision",
+            task="classification",
+            arch="test-arch",
+            training_recipe="test-recipe",
+            hydra_config_sha="a" * 64,
+            git_shas={},
+            dataset_versions={},
+            checkpoint_uri="/tmp/x",
+            metrics={},
+            gate_status="pending",
+            trained_at=datetime(2026, 1, 1),
+            trained_by="operator:test",
+        )
+
+    # The lazy import inside _run_single re-resolves the attribute from the
+    # module object, so patching the module attribute is sufficient.
+    monkeypatch.setattr("pet_infra.orchestrator.runner.pet_run", fake_pet_run)
+
+    recipe_fixture = tmp_path / "r.yaml"
+    recipe_fixture.write_text(_RECIPE_YAML)
+    launch_multirun(
+        recipe_fixture,
+        sweep_params={"trainer": ["a", "b"]},
+        results_root=tmp_path / "out",
+    )
+    assert len(captured) == 2, f"Expected 2 calls to pet_run, got {len(captured)}: {captured}"
+    override_sets = {frozenset(ov) for ov in captured}
+    assert override_sets == {frozenset(["trainer=a"]), frozenset(["trainer=b"])}

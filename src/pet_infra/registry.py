@@ -6,5 +6,6 @@ CONVERTERS = Registry("converter", scope="pet_infra")
 METRICS = Registry("metric", scope="pet_infra")
 DATASETS = Registry("dataset", scope="pet_infra")
 STORAGE = Registry("storage", scope="pet_infra")
+OTA = Registry("ota", scope="pet_infra")
 
-__all__ = ["TRAINERS", "EVALUATORS", "CONVERTERS", "METRICS", "DATASETS", "STORAGE"]
+__all__ = ["TRAINERS", "EVALUATORS", "CONVERTERS", "METRICS", "DATASETS", "STORAGE", "OTA"]

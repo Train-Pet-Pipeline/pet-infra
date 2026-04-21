@@ -2485,13 +2485,13 @@ lazy import). CI install order (updates Phase 3A 5-step to 6-step):
 
 ```bash
 # Step 1: install pet-infra peer (pinned to matrix row)
-pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.4.0-rc1'
+pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.4.0'
 
 # Step 2: install pet-train peer (cross-repo runtime dep)
 pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.0.0'
 
 # Step 3: install pet-quantize peer  ← NEW vs Phase 3A 5-step
-pip install 'pet-quantize @ git+https://github.com/Train-Pet-Pipeline/pet-quantize@v2.0.0-rc1'
+pip install 'pet-quantize @ git+https://github.com/Train-Pet-Pipeline/pet-quantize@v2.0.0'
 
 # Step 4: editable install without re-resolving peers
 pip install -e . --no-deps
@@ -2502,14 +2502,14 @@ pip install -e ".[dev]"
 # Step 6: version assertion
 python -c "
 import pet_infra, pet_train, pet_quantize, pet_eval
-assert pet_infra.__version__ == '2.4.0-rc1', pet_infra.__version__
+assert pet_infra.__version__ == '2.4.0', pet_infra.__version__
 assert pet_train.__version__ == '2.0.0', pet_train.__version__
-assert pet_quantize.__version__ == '2.0.0-rc1', pet_quantize.__version__
-assert pet_eval.__version__ == '2.1.0-rc1', pet_eval.__version__
+assert pet_quantize.__version__ == '2.0.0', pet_quantize.__version__
+assert pet_eval.__version__ == '2.1.0', pet_eval.__version__
 "
 ```
 
-`<matrix_tag>` values are taken from the `2026.08-rc` row in
+`<matrix_tag>` values are taken from the `2026.08` row in
 `pet-infra/docs/compatibility_matrix.yaml`. See §11.4.1 for the 3-step trivial
 case and §11.4 base template for the general 4-step pattern. The 5-step
 cross-repo plugin pattern (pet-eval + pet-train) is documented in §11.6.

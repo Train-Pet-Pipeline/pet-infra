@@ -40,6 +40,9 @@ pet = "pet_infra.cli:main"
 [project.entry-points."pet_infra.plugins"]
 pet_infra = "pet_infra._register:register_all"
 
+[project.entry-points."pet_infra.experiment_loggers"]
+# clearml = "pet_infra.experiment_logger.clearml_logger:ClearMLLogger"  # PR #P0-C adds this
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

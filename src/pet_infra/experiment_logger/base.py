@@ -4,13 +4,14 @@ from abc import ABC, abstractmethod
 from typing import Literal
 
 from pet_schema.model_card import ModelCard
+from pet_schema.recipe import ExperimentRecipe
 
 
 class ExperimentLogger(ABC):
     """Cross-stage experiment tracking ABC. Pluggable via entry-points."""
 
     @abstractmethod
-    def start(self, recipe, stage: str) -> str | None:
+    def start(self, recipe: ExperimentRecipe | None, stage: str) -> str | None:
         """Start a task. Returns task_id (None for loggers without identity)."""
 
     @abstractmethod

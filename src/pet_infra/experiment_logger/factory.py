@@ -30,6 +30,12 @@ def build_experiment_logger(cfg: dict[str, Any]) -> ExperimentLogger:
         return _BUILTINS[name]()
     for ep in entry_points(group="pet_infra.experiment_loggers"):
         if ep.name == name:
-            cls = ep.load()
+            try:
+                cls = ep.load()
+            except Exception as e:
+                raise RuntimeError(
+                    f"failed to load experiment logger plugin '{name}'"
+                    f" from entry-point '{ep.value}'"
+                ) from e
             return cls(**{k: v for k, v in cfg.items() if k != "name"})
     raise KeyError(f"unknown experiment logger: {name}")

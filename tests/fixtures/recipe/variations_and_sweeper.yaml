@@ -1,0 +1,24 @@
+recipe_id: variations-and-sweeper-test
+description: variations block + hydra.sweeper.params simultaneously must fail-fast
+scope: single_repo
+schema_version: "2.0.0"
+stages:
+  - name: sft
+    component_registry: trainers
+    component_type: sft_lora
+    inputs: {}
+    config_path: configs/sft.yaml
+    depends_on: []
+variations:
+  - name: lr
+    stage: sft
+    hydra_path: trainer.lr
+    values: [0.0001, 0.001]
+produces:
+  - sft_model
+default_storage: local
+required_plugins: []
+hydra:
+  sweeper:
+    params:
+      trainer.lr: choice(1e-4, 1e-3)

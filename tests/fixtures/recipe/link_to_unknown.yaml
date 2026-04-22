@@ -1,0 +1,21 @@
+recipe_id: link-to-unknown-test
+description: link_to pointing at non-existent axis must fail-fast
+scope: single_repo
+schema_version: "2.0.0"
+stages:
+  - name: sft
+    component_registry: trainers
+    component_type: sft_lora
+    inputs: {}
+    config_path: configs/sft.yaml
+    depends_on: []
+variations:
+  - name: lora_alpha
+    stage: sft
+    hydra_path: trainer.lora_alpha
+    values: [8, 16]
+    link_to: NoSuchAxis
+produces:
+  - sft_model
+default_storage: local
+required_plugins: []

@@ -1,0 +1,20 @@
+recipe_id: axis-stage-unknown-test
+description: AblationAxis.stage references non-existent stage must fail at recipe load
+scope: single_repo
+schema_version: "2.0.0"
+stages:
+  - name: sft
+    component_registry: trainers
+    component_type: sft_lora
+    inputs: {}
+    config_path: configs/sft.yaml
+    depends_on: []
+variations:
+  - name: lr
+    stage: nonexistent_stage
+    hydra_path: trainer.lr
+    values: [0.0001, 0.001]
+produces:
+  - sft_model
+default_storage: local
+required_plugins: []

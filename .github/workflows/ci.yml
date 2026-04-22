@@ -22,6 +22,9 @@ jobs:
       - name: Configure git for private repos
         run: git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
+      - name: Install pet-schema peer dependency
+        run: pip install 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v3.0.0'
+
       - name: Install dependencies
         run: pip install -e ".[dev,api,sync]"
 

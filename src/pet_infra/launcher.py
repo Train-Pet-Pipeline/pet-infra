@@ -127,8 +127,8 @@ def _run_single(recipe_path: Path, overrides: dict[str, Any], out_dir: Path) -> 
     # Lazy imports to avoid circular dependencies at module load time AND to keep
     # `pet_run` monkeypatch-able from tests (`tests/test_variations.py` patches
     # `pet_infra.launcher.pet_run` indirectly via the runner module).
+    from pet_infra.compose import compose_recipe  # noqa: PLC0415
     from pet_infra.orchestrator.runner import pet_run  # noqa: PLC0415
-    from pet_infra.recipe.compose import compose_recipe  # noqa: PLC0415
 
     out_dir.mkdir(parents=True, exist_ok=True)
     # Convert dict overrides → Hydra-style list before passing to pet_run.
@@ -141,7 +141,7 @@ def _run_single(recipe_path: Path, overrides: dict[str, Any], out_dir: Path) -> 
     cfg_path = (out_dir / "resolved_config.yaml").resolve()
     # resolved_dict is OmegaConf.to_container(..., resolve=True); yaml.safe_dump on
     # it == OmegaConf.to_yaml(cfg, resolve=True) modulo formatting. P1-E SHA-verifies
-    # against the same canonical resolved-dict form (see recipe/compose.py).
+    # against the same canonical resolved-dict form (see pet_infra.compose.compose_recipe).
     cfg_path.write_text(yaml.safe_dump(resolved_dict, sort_keys=True))
     resolved_config_uri = f"file://{cfg_path}"
 
@@ -335,8 +335,7 @@ def launch_multirun(
     Note:
         Set ``PET_MULTIRUN_SYNC=1`` to force in-process synchronous execution.
     """
-    from pet_infra.compose import compose_recipe as _compose_simple  # noqa: PLC0415
-    from pet_infra.recipe.compose import compose_recipe as _compose_full  # noqa: PLC0415
+    from pet_infra.compose import compose_recipe  # noqa: PLC0415
 
     recipe_path = Path(recipe_path)
     # output_dir is the P1-D parameter name; results_root is the legacy alias.
@@ -345,7 +344,7 @@ def launch_multirun(
     # Legacy path: caller passed sweep_params explicitly. Preserve old return
     # shape (list[SweepResult]) and ignore recipe.variations.
     if sweep_params is not None:
-        recipe = _compose_simple(recipe_path)
+        recipe, _, _ = compose_recipe(recipe_path)
         return _dispatch_legacy(
             recipe_path=recipe_path,
             recipe_id=recipe.recipe_id,
@@ -359,7 +358,7 @@ def launch_multirun(
     #    not in recipe.stages via ExperimentRecipe._cross_validate; pydantic v2
     #    ValidationError IS a ValueError subclass so test_variation_stage_unknown_fails
     #    sees a ValueError matching "stage 'X' not found").
-    recipe, resolved_dict, _sha = _compose_full(recipe_path)
+    recipe, resolved_dict, _sha = compose_recipe(recipe_path)
 
     # 2. Fail-fast guards (run BEFORE any execution; spec §1.3).
     overrides = list(overrides or [])

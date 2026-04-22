@@ -162,10 +162,10 @@ def test_gate_failed_short_circuits_downstream(tmp_path):
 
     import yaml as _yaml
 
+    from pet_infra.compose import compose_recipe
     from pet_infra.orchestrator.cache import StageCache
     from pet_infra.orchestrator.hash import hash_stage_config
     from pet_infra.recipe.card_id import precompute_card_id
-    from pet_infra.recipe.compose import compose_recipe
 
     recipe_obj, _, _ = compose_recipe(recipe_path)
     eval_stage = next(s for s in recipe_obj.stages if s.name == "eval")

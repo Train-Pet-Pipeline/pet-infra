@@ -2383,29 +2383,42 @@ Spec §7.3 原本提到 "Alembic 迁移"，但两仓从 v1 起就使用上述手
 
 ## 11. 依赖治理与 peer-dep 约定
 
+> **本章适用于 `pet-infra` 和 `pet-schema` 两个 peer-dep 上游（β 决策 2026-04-23）。**
+> 其他 pet-* 依赖（跨仓 plugin runtime deps）见 §11.6。
+
 ### 11.1 为什么 peer-dep
 
 `pet-infra` 是整个管线的底层运行时（Registry、Plugin Discovery、Config、CLI），**其他仓库（pet-data、pet-annotation 等）均依赖它**。若下游 `pyproject.toml` 用 `pet-infra @ git+...@vX.Y.Z` 硬 pin，则每次 pet-infra 版本升级都需同步改所有下游仓库的 pin，违背"pet-infra 可自由演进"原则。
 
-正确做法：**`compatibility_matrix.yaml` 是唯一版本真理源**，下游不在 `[project.dependencies]` 里声明 pet-infra，改由安装者（CI/开发者）按 matrix 先装 pet-infra、再装下游。
+`pet-schema` 是 Schema 合同的唯一权威来源，同样采用 peer-dep（β 模型，2026-04-23 决策）：下游 6 个仓（pet-data / pet-annotation / pet-train / pet-eval / pet-quantize / pet-ota）不在 `pyproject.toml` 里声明 pet-schema 依赖，改由安装者按 matrix 先装。
+
+正确做法：**`compatibility_matrix.yaml` 是唯一版本真理源**，下游不在 `[project.dependencies]` 里声明 pet-infra 或 pet-schema，改由安装者（CI/开发者）按 matrix 先装 peers、再装下游。
 
 核心约定：
 
 - `pet-infra/docs/compatibility_matrix.yaml` 记录每个 release 条目（release 名 / schema / infra / data / annotation 版本）
-- 下游 `pyproject.toml` **不声明** `pet-infra` 依赖
-- 下游 `_register.py` 加 fail-fast guard（见 §11.3）确保未装 pet-infra 时立即给出友好错误
-- CI 按 §11.4 统一装序，保证 pet-infra 先于下游安装
+- 下游 `pyproject.toml` **不声明** `pet-infra` 和 `pet-schema` 依赖
+- 下游 `_register.py` 加 fail-fast guard（见 §11.3）确保未装 peers 时立即给出友好错误
+- CI 按 §11.4 统一装序，保证 pet-schema + pet-infra 先于下游安装
+- matrix 约定见 §11.7
+
+**当前违规**：pet-quantize / pet-ota 仍有硬 pin 残留，Phase 7/8 修复（参见 `docs/architecture/OVERVIEW.md §4` 表注）。
 
 ### 11.2 下游 `pyproject.toml` 写法
 
-**删除**（或不添加）`[project.dependencies]` 里的 pet-infra 行：
+**删除**（或不添加）`[project.dependencies]` 里的 pet-infra 和 pet-schema 行：
 
 ```toml
 # 错误写法——禁止
 [project.dependencies]
-# pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.1.0  ← 删除
+# pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v2.4.0  ← 删除
+# pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.1.0   ← 删除
 
-# 正确写法——什么都不写，pet-infra 是 peer dependency
+# 正确写法——两者均为 peer dependency，不在 dependencies 里声明
+# 仅列第三方库和跨仓 runtime plugin deps（见 §11.6）
+[project.dependencies]
+"torch>=2.1"  # 第三方（保留）
+"pet-train"   # 跨仓 runtime dep（若有，见 §11.6）
 ```
 
 **README 必须加 Prerequisites 段**：
@@ -2413,56 +2426,92 @@ Spec §7.3 原本提到 "Alembic 迁移"，但两仓从 v1 起就使用上述手
 ```markdown
 ## Prerequisites
 
-`pet-infra >= 2.x` must be installed first before installing this package.
-Install the exact version pinned in
+`pet-schema >= 2.x` and `pet-infra >= 2.x` must be installed first.
+Install the exact versions pinned in
 [`pet-infra/docs/compatibility_matrix.yaml`](https://github.com/Train-Pet-Pipeline/pet-infra/blob/main/docs/compatibility_matrix.yaml):
 
 ```bash
+pip install 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@<matrix_tag>'
 pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@<matrix_tag>'
 ```
 ```
 
 ### 11.3 `_register.py` fail-fast guard 模板
 
-每个下游仓库的 `src/<pkg>/_register.py` 文件**顶部**（任何其他 import 之前）必须加：
+两种 guard 模式，适用场景不同：
+
+#### 模式 A：模块顶层 `ImportError`（仅限 pet-infra `__init__.py`）
+
+pet-infra 在自身 `__init__.py` 顶层检查 pet-schema peer-dep：
 
 ```python
+# src/pet_infra/__init__.py（pet-infra 内部用）
 try:
-    import pet_infra  # noqa: F401
+    import pet_schema  # noqa: F401
 except ImportError as e:
     raise ImportError(
-        "pet-data requires pet-infra to be installed first. "
-        "Install via 'pip install pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@<tag>' "
+        "pet-infra requires pet-schema to be installed as a peer dependency. "
+        "Install via: pip install 'pet-schema @ git+https://...@<tag>' "
         "using the tag pinned in pet-infra/docs/compatibility_matrix.yaml."
     ) from e
 ```
 
-（将 `"pet-data"` 替换为对应仓库名。）
+此模式发生在 import time，使用 `ImportError` 语义正确（缺包）。
 
-此 guard 的作用：开发者若忘记装 pet-infra 就装下游包，import 时立刻得到含安装指令的友好错误，而不是难懂的 `ModuleNotFoundError`。
+#### 模式 B：`register_all()` 内 `RuntimeError`（下游仓库标准模板）
+
+每个下游仓库（pet-data / pet-annotation / pet-train / pet-eval / pet-quantize / pet-ota）的 `src/<pkg>/_register.py` 在 `register_all()` 内检查：
+
+```python
+def register_all() -> None:
+    # Fail-fast guard: check both peer-deps before any side effects
+    try:
+        import pet_schema  # noqa: F401
+        import pet_infra   # noqa: F401
+    except ImportError as e:
+        raise RuntimeError(
+            "pet-data requires pet-schema + pet-infra to be installed first (peer-deps). "
+            "Install via compatibility_matrix.yaml. Missing: " + str(e)
+        ) from e
+    # ... 正常注册逻辑 ...
+```
+
+使用 `RuntimeError`（非 `ImportError`），因为此时是配置错误而非 import 错误——peer 本身是可安装的，只是安装者忘记装了。
+
+**规则**：
+- 模式 A 仅用于 pet-infra 检查 pet-schema
+- 模式 B 用于所有下游仓库检查 pet-schema + pet-infra（均为 peer）
 
 ### 11.4 统一 CI 装序模板
 
-所有涉及 pet-infra 下游仓库的 GitHub Actions workflow（包括 pet-data、pet-annotation）**必须**按以下 4 步顺序安装：
+所有涉及 pet-infra 下游仓库的 GitHub Actions workflow（包括 pet-data、pet-annotation）**必须**按以下 **5 步**顺序安装（β 模型：pet-schema 和 pet-infra 均为 peer-dep）：
 
 ```bash
-# Step 1: 先装 pet-infra（用 compatibility_matrix 里固定的 tag）
-pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@<matrix_tag>'
+# Step 1: 先装 pet-schema peer（用 compatibility_matrix 里固定的 tag）
+pip install 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v<schema_tag>'
 
-# Step 2: 装下游包（editable + --no-deps 防止 pip 重解析覆盖已装的 pet-infra）
+# Step 2: 再装 pet-infra peer（用 compatibility_matrix 里固定的 tag）
+pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v<infra_tag>'
+
+# Step 3: 装下游包（editable + --no-deps 防止 pip 重解析覆盖已装的 peers）
 pip install -e ".[dev]" --no-deps
 
-# Step 3: 再次装下游 dev extras（不带 --no-deps，pip 只补缺的第三方工具；
-# 因为 pet-infra 已不在下游 pyproject.toml dependencies 里，不会被触碰）
+# Step 4: 再次装下游 dev extras（不带 --no-deps，pip 只补缺的第三方工具；
+# 因为 pet-schema + pet-infra 已不在下游 pyproject.toml dependencies 里，不会被触碰）
 pip install -e ".[dev]"
 
-# Step 4: 断言 pet-infra 版本正确
-python -c "import pet_infra; assert pet_infra.__version__.startswith(('2.',))"
+# Step 5: 断言 pet-schema + pet-infra + 下游包版本正确
+python -c "
+import pet_schema, pet_infra, <your_pkg>
+assert pet_schema.__version__ == '<schema_tag>', pet_schema.__version__
+assert pet_infra.__version__ == '<infra_tag>', pet_infra.__version__
+print('versions OK')
+"
 ```
 
-`<matrix_tag>` 从 `pet-infra/docs/compatibility_matrix.yaml` 里当前 release 条目取得（如 `v2.2.0`）。
+`<schema_tag>` 和 `<infra_tag>` 从 `pet-infra/docs/compatibility_matrix.yaml` 里当前 release 条目取得（如 `v2.4.0`）。
 
-**pet-infra 自身 CI**（`plugin-discovery.yml` 等）：用 `pip install -e ".[dev]"` 装自身，无需上述四步。
+**pet-infra 自身 CI**（`ci.yml` 等）：只需 2 步（① pet-schema peer → ② `pip install -e ".[dev,api,sync]"`），无需完整 5 步。
 
 > **W&B 已于 Phase 4 P1-F（2026-04-22）按 spec §1.5 移除。ClearML 是唯一的实验追踪器。历史 W&B `init()` 调用点和 W&B Dashboard URL 均已废弃；请使用配置在 `CLEARML_API_HOST` 的 ClearML Web UI。**
 
@@ -2480,41 +2529,48 @@ python -c "import pet_infra; assert pet_infra.__version__.startswith(('2.',))"
 
 `experiment_logger` 以 `mode: saas|self_hosted` 搭配 `on_unavailable: strict|fallback_null|retry` 配置；离线 CI（`mode: offline`）无需凭据。见 `src/pet_infra/experiment_logger/clearml_logger.py`。
 
-### §11.4.3 Phase 3B pet-eval 6-step peer-dep install
+### §11.4.3 pet-eval 8-step peer-dep install（β 模型更新）
 
-pet-eval 2.1.0 adds pet-quantize as a runtime peer (for QuantizedVlmEvaluator
-lazy import). CI install order (updates Phase 3A 5-step to 6-step):
+pet-eval 依赖 pet-schema + pet-infra（两个 peer-dep）以及 pet-train + pet-quantize（跨仓 runtime deps）。β 模型下 pet-schema 加入装序，6-step 更新为 8-step：
 
 ```bash
-# Step 1: install pet-infra peer (pinned to matrix row)
-pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.4.0'
+# Step 1: install pet-schema peer (β: NEW vs previous 6-step)
+pip install 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v2.4.0'
 
-# Step 2: install pet-train peer (cross-repo runtime dep)
-pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.0.0'
+# Step 2: install pet-infra peer (pinned to matrix row)
+pip install 'pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.5.0'
 
-# Step 3: install pet-quantize peer  ← NEW vs Phase 3A 5-step
-pip install 'pet-quantize @ git+https://github.com/Train-Pet-Pipeline/pet-quantize@v2.0.0'
+# Step 3: install pet-train peer (cross-repo runtime dep)
+pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.0.1'
 
-# Step 4: editable install without re-resolving peers
+# Step 4: install pet-quantize peer (cross-repo runtime dep)
+pip install 'pet-quantize @ git+https://github.com/Train-Pet-Pipeline/pet-quantize@v2.0.1'
+
+# Step 5: editable install without re-resolving peers
 pip install -e . --no-deps
 
-# Step 5: re-resolve dev extras (pip only fills missing third-party tools)
+# Step 6: re-resolve dev extras (pip only fills missing third-party tools)
 pip install -e ".[dev]"
 
-# Step 6: version assertion
+# Step 7: (optional) install pet-eval itself pinned (for smoke tests)
+# pip install 'pet-eval @ git+https://github.com/Train-Pet-Pipeline/pet-eval@v2.2.0'
+
+# Step 8: version assertion across all 4 modules
 python -c "
-import pet_infra, pet_train, pet_quantize, pet_eval
-assert pet_infra.__version__ == '2.4.0', pet_infra.__version__
-assert pet_train.__version__ == '2.0.0', pet_train.__version__
-assert pet_quantize.__version__ == '2.0.0', pet_quantize.__version__
-assert pet_eval.__version__ == '2.1.0', pet_eval.__version__
+import pet_schema, pet_infra, pet_train, pet_quantize, pet_eval
+assert pet_schema.__version__ == '2.4.0', pet_schema.__version__
+assert pet_infra.__version__ == '2.5.0', pet_infra.__version__
+assert pet_train.__version__ == '2.0.1', pet_train.__version__
+assert pet_quantize.__version__ == '2.0.1', pet_quantize.__version__
+assert pet_eval.__version__ == '2.2.0', pet_eval.__version__
+print('all versions OK')
 "
 ```
 
-`<matrix_tag>` values are taken from the `2026.08` row in
-`pet-infra/docs/compatibility_matrix.yaml`. See §11.4.1 for the 3-step trivial
-case and §11.4 base template for the general 4-step pattern. The 5-step
-cross-repo plugin pattern (pet-eval + pet-train) is documented in §11.6.
+Version values are taken from the `2026.09` row in
+`pet-infra/docs/compatibility_matrix.yaml`. See §11.4 for the 5-step base
+template. The cross-repo plugin pattern (pet-train + pet-quantize runtime deps)
+is documented in §11.6.
 
 ### 11.5 开发环境
 
@@ -2533,39 +2589,73 @@ CI 流水线每次从干净环境全新安装，按 §11.4 装序保证环境一
 部分 plugin 跨仓直接 runtime import 另一仓的实现（典型案例：`pet-eval` 的 `AudioEvaluator` 需要
 `pet-train` 的 PANNs 零样本推理实现）。规则：
 
-**pyproject.toml（以 pet-eval 为例）**：
+**pyproject.toml（以 pet-eval 为例，β 模型）**：
 ```toml
 dependencies = [
-    "pet-schema",      # 无 pin（matrix 行锁定）
+    # pet-schema removed (peer-dep per §11.1 β model — not listed here)
+    # pet-infra removed (peer-dep per §11.1 β model — not listed here)
+    # Cross-repo runtime plugin deps (no pin, matrix row locks the version):
     "pet-train",       # 跨仓 runtime dep，无 pin
-    # pet-infra 按 §11 peer-dep 不列
+    "pet-quantize",    # 跨仓 runtime dep，无 pin
+    "torch>=2.1",      # 第三方（保留）
     # ...
 ]
 ```
 
-**`_register.py` fail-fast guard**：
+**`_register.py` fail-fast guard（模式 B，见 §11.3）**：
 ```python
 def register_all():
     try:
+        import pet_schema  # peer-dep guard (β)
         import pet_infra   # peer-dep guard
         import pet_train   # 跨仓 runtime guard
+        import pet_quantize  # 跨仓 runtime guard
     except ImportError as e:
         raise RuntimeError(
-            f"pet-eval requires pet-infra + pet-train runtime. "
-            f"Install via matrix row 2026.07. Missing: {e.name}"
+            f"pet-eval requires pet-schema + pet-infra + pet-train + pet-quantize. "
+            f"Install via compatibility_matrix.yaml 2026.09 row. Missing: {e.name}"
         ) from e
 ```
 
-**CI 装序（§11.4 四步 + 1 被依赖 plugin 仓）**：
+**CI 装序（§11.4 五步 + 跨仓 plugin 仓，共 8 步，见 §11.4.3）**：
 ```
-1. pip install 'pet-infra @ git+…@<matrix_tag>'
-2. pip install 'pet-train @ git+…@<matrix_tag>'       # 先装被依赖 plugin 仓
-3. pip install -e . --no-deps                          # editable 下游
-4. pip install -e '.[dev]'                             # 补 dev extras
-5. python -c "import pet_infra, pet_train; …"         # 版本断言
+1. pip install 'pet-schema @ git+…@v<schema_tag>'      # β: pet-schema peer
+2. pip install 'pet-infra @ git+…@v<infra_tag>'        # pet-infra peer
+3. pip install 'pet-train @ git+…@v<train_tag>'        # 先装被依赖 plugin 仓
+4. pip install 'pet-quantize @ git+…@v<quantize_tag>'  # 先装被依赖 plugin 仓
+5. pip install -e . --no-deps                          # editable 下游
+6. pip install -e '.[dev]'                             # 补 dev extras
+7. (optional smoke) pip install 'pet-eval @ ...'
+8. python -c "import pet_schema, pet_infra, pet_train, pet_quantize, pet_eval; …"
 ```
 
 具体 class/模块名由 pet-train v2 rename PR 锁定（`src/pet_train/audio/inference.py`，搬自 v1 的 `src/pet_train/audio_inference.py`）。
+
+### 11.7 `compatibility_matrix.yaml` 约定
+
+`pet-infra/docs/compatibility_matrix.yaml` 是全生态系统的版本锁定单一真理源。维护约定：
+
+1. **不用 `-rc` 后缀**：release 字段只写稳定版本号（如 `"2026.09"`），不写 `"2026.09-rc1"` 等。预发布版本在 dev 分支测试完成后直接 tag 稳定版。
+2. **只增不改**：每次 release 在文件末尾新增一行，不修改历史行。历史行自动成为 archive。
+3. **`releases[-1]` 是最新**：脚本和 workflow 通过 `data["releases"][-1]` 取最新行，不硬编码 release 名。
+4. **`cross-repo-smoke-install.yml` 强制约束**：每次 `compatibility_matrix.yaml` 变更（push 到 dev/main）都触发 7 仓 smoke install，确保矩阵值与实际可安装 wheel 匹配。
+5. **同步更新**：添加新 matrix 行时，必须同步更新 `docs/architecture/OVERVIEW.md §4` 中的装序矩阵表。
+
+```yaml
+# 正确示例
+releases:
+  - release: "2026.09"    # 不写 rc 后缀
+    released: 2026-04-22  # 实际发布日期
+    phase: phase-4-software-completion
+    pet_schema: "2.4.0"
+    pet_infra: "2.5.0"
+    # ...
+
+  - release: "2026.10"    # 新增行，不改旧行
+    pet_schema: "3.0.0"
+    pet_infra: "2.6.0"
+    # ...
+```
 
 ---
 

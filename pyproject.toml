@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pet-infra"
 version = "2.5.0"
 description = "Shared infrastructure for Train-Pet-Pipeline"
+license = {text = "BUSL-1.1"}
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "tenacity>=8.0,<9.0",

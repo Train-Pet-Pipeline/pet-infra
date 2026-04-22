@@ -407,7 +407,7 @@ pet-annotation pass → 同上
 pet-train pass      → 同上 + W&B guard
 pet-eval pass       → 同上 + W&B guard
 pet-quantize pass   → peer-dep 修正 + pet-schema pin 调整 + W&B guard
-pet-ota pass        → peer-dep 修正 + pet-quantize pin 统一 + pet-schema pin 调整
+pet-ota pass        → peer-dep 修正 + pet-quantize pin 统一（pet-ota 不依赖 pet-schema）
 pet-id pass         → 无治理动作（独立工具）
 ```
 

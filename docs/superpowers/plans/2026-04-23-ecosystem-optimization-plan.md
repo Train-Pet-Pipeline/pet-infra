@@ -207,9 +207,9 @@ Expected：exit 0。
 
 **发现原则：** 实际 Makefile 目前只定义 `setup` / `test` / `lint` / `clean` 四个 target（CLAUDE.md 强制）；**没有预置 smoke 目标**，也**没有 `tests/fixtures/*_smoke.yaml` 预置 recipe**。T6.3 的 E2E 是**走读时识别 + 本仓已有测试集的子集**，命令由 T3 走读产出：
 
-- pet-train 候选：`pytest tests/ -k 'smoke or integration or e2e' -v`（若有命中子集）；否则 `pytest tests/test_sft_trainer.py -v`（核心 trainer 测试走一遍）
-- pet-eval 候选：`pytest tests/test_fusion_recipe.py tests/test_runners -v`（走读确认测试文件名后用实际路径）
-- pet-quantize 候选：`pytest tests/test_noop_converter.py tests/test_plugin_register_noop.py -v`（零 SDK 依赖 + 不需硬件 runner）
+- pet-train 候选（实测文件路径）：`pytest tests/plugins/test_llamafactory_sft.py tests/plugins/test_llamafactory_dpo.py -v`（核心 SFT/DPO trainer plugin 测试走一遍）
+- pet-eval 候选（实测文件路径）：`pytest tests/recipes/test_fusion_recipe.py tests/test_runners -v`
+- pet-quantize 候选（实测文件路径）：`pytest tests/test_noop_converter.py tests/test_plugin_register_noop.py -v`（零 SDK 依赖 + 不需硬件 runner）
 
 **T3 走读阶段产出该仓 T6.3 的具体命令**，写入 findings-<repo>.md 的 "Mini E2E" 段。T6.3 执行时用该命令。
 
@@ -975,13 +975,9 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ### Task 5.6：T6 回归
 
 - [ ] 执行 Template **T6.1 / T6.2**
-- [ ] **Step T6.3 (pet-train)：** 跑 mini SFT smoke
+- [ ] **Step T6.3 (pet-train)：** 执行 T3 走读确定的 mini E2E 命令（见 T6.3 模板协议）。默认候选：`pytest tests/plugins/test_llamafactory_sft.py tests/plugins/test_llamafactory_dpo.py -v`
 
-```bash
-make smoke-sft 2>&1 | tail -40
-```
-
-Expected：exit 0，artifact 落盘。失败即 regression。
+Expected：exit 0；pytest 全部绿。失败即 regression，回滚 T5 改动。
 
 ### Task 5.7：T7 / T8 / T9
 
@@ -1025,13 +1021,9 @@ pet-eval 走读重点：
 - [ ] **Step T5.4(6A) pet-schema pin 调整**（同 Phase 3 的 3A）
 - [ ] **Step T5.4(6B) 补 W&B residue CI guard**（同 Phase 5 的 5B）
 
-- [ ] **Step T6.3 (pet-eval)：** 跑 3 evaluator 各一次（含 fusion dry-run）
+- [ ] **Step T6.3 (pet-eval)：** 执行 T3 走读确定的 mini E2E 命令（见 T6.3 模板协议）。默认候选：`pytest tests/recipes/test_fusion_recipe.py tests/test_runners -v`（覆盖 fusion 三策略 + 2 runner）
 
-```bash
-pet eval --recipe tests/fixtures/eval_smoke.yaml --dry-run-hardware
-```
-
-Expected：exit 0；fusion 三策略（single_modal / and_gate / weighted）各产出 artifact。
+Expected：exit 0；pytest 全部绿。失败即 regression，回滚 T5 改动。
 
 pet-eval architecture.md 重点章节：
 - §4 核心模块 —— 8 metric plugins / text/audio/quantized_vlm evaluators / 3 fusion evaluators
@@ -1182,13 +1174,9 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ### Task 7.6：T6 回归
 
 - [ ] 执行 Template **T6.1 / T6.2**
-- [ ] **Step T6.3 (pet-quantize)：** dry-run 1 converter
+- [ ] **Step T6.3 (pet-quantize)：** 执行 T3 走读确定的 mini E2E 命令（见 T6.3 模板协议）。默认候选：`pytest tests/test_noop_converter.py tests/test_plugin_register_noop.py -v`（零 SDK 依赖，适合非硬件 runner）
 
-```bash
-pet quantize --recipe tests/fixtures/quantize_smoke.yaml --dry-run-hardware
-```
-
-Expected：exit 0；artifact 落盘。
+Expected：exit 0；pytest 全部绿。失败即 regression，回滚 T5 改动。
 
 ### Task 7.7：T7 / T8 / T9
 

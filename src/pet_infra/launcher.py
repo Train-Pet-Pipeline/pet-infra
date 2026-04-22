@@ -28,6 +28,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, TypedDict
 
+import yaml
+
 log = logging.getLogger(__name__)
 
 
@@ -38,6 +40,10 @@ class SweepResult(TypedDict):
     card_path: Path
     status: str  # 'ok' | 'failed'
     error: str | None
+    # P1-C: file:// URI of <out_dir>/resolved_config.yaml (None on failure).
+    # Replay (P1-E) SHA-verifies against this dump, so it must be the
+    # OmegaConf-resolved view (resolve=True).
+    resolved_config_uri: str | None
 
 
 def _sweep_hash(overrides: dict[str, Any]) -> str:
@@ -58,20 +64,38 @@ def _run_single(recipe_path: Path, overrides: dict[str, Any], out_dir: Path) -> 
 
     Extracted as a module-level function so tests can monkeypatch it.
 
+    Side effect (P1-C): writes ``<out_dir>/resolved_config.yaml`` containing the
+    OmegaConf-resolved view of the recipe with overrides applied. The returned
+    dict carries ``resolved_config_uri`` as a ``file://`` URI to that dump so
+    the replay flow (P1-E) can SHA-verify it against ``ModelCard.resolved_config_uri``.
+
     Args:
         recipe_path: Path to the recipe YAML file.
         overrides: Axis-override key-value pairs for this combo.
         out_dir: Output directory for this sweep combo.
 
     Returns:
-        Dict with at minimum ``card_path`` and ``status`` keys.
+        Dict with ``card_path``, ``status``, ``overrides``, and ``resolved_config_uri``.
     """
-    # Lazy import to avoid circular dependencies at module load time.
+    # Lazy imports to avoid circular dependencies at module load time.
     from pet_infra.orchestrator.runner import pet_run  # noqa: PLC0415
+    from pet_infra.recipe.compose import compose_recipe  # noqa: PLC0415
 
     out_dir.mkdir(parents=True, exist_ok=True)
     # Convert dict overrides → Hydra-style list before passing to pet_run.
     override_list = [f"{k}={v}" for k, v in overrides.items()]
+
+    # Dump the resolved config BEFORE pet_run executes so replay can verify even
+    # if a downstream stage fails. compose_recipe is the same call pet_run makes
+    # internally; resume-from-cache makes the duplicate work cheap.
+    _, resolved_dict, _ = compose_recipe(recipe_path, overrides=override_list)
+    cfg_path = (out_dir / "resolved_config.yaml").resolve()
+    # resolved_dict is OmegaConf.to_container(..., resolve=True); yaml.safe_dump on
+    # it == OmegaConf.to_yaml(cfg, resolve=True) modulo formatting. P1-E SHA-verifies
+    # against the same canonical resolved-dict form (see recipe/compose.py).
+    cfg_path.write_text(yaml.safe_dump(resolved_dict, sort_keys=True))
+    resolved_config_uri = f"file://{cfg_path}"
+
     card = pet_run(recipe_path, overrides=override_list)
     card_path = out_dir / "card.json"
     card_path.write_text(card.model_dump_json(indent=2))
@@ -79,6 +103,7 @@ def _run_single(recipe_path: Path, overrides: dict[str, Any], out_dir: Path) -> 
         "card_path": card_path,
         "status": "ok",
         "overrides": overrides,
+        "resolved_config_uri": resolved_config_uri,
     }
 
 
@@ -142,6 +167,7 @@ def launch_multirun(
                         card_path=outcome["card_path"],
                         status="ok",
                         error=None,
+                        resolved_config_uri=outcome.get("resolved_config_uri"),
                     )
                 )
             except Exception as exc:
@@ -152,6 +178,7 @@ def launch_multirun(
                         card_path=out_dir / "card.json",
                         status="failed",
                         error=str(exc),
+                        resolved_config_uri=None,
                     )
                 )
     else:
@@ -172,6 +199,7 @@ def launch_multirun(
                             card_path=outcome["card_path"],
                             status="ok",
                             error=None,
+                            resolved_config_uri=outcome.get("resolved_config_uri"),
                         )
                     )
                 except Exception as exc:
@@ -182,6 +210,7 @@ def launch_multirun(
                             card_path=out_dir / "card.json",
                             status="failed",
                             error=str(exc),
+                            resolved_config_uri=None,
                         )
                     )
 
@@ -196,6 +225,7 @@ def launch_multirun(
                         "status": r["status"],
                         "card_path": str(r["card_path"]),
                         "error": r["error"],
+                        "resolved_config_uri": r["resolved_config_uri"],
                     }
                     for r in results
                 ],

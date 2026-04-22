@@ -5,8 +5,9 @@ dispatched by ``stage_executor.STAGE_RUNNERS`` keyed on ``stage.component_regist
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
+from mmengine.registry import Registry
 from omegaconf import OmegaConf
 from pet_schema import ExperimentRecipe
 from pet_schema.model_card import ModelCard
@@ -44,71 +45,78 @@ def _load_stage_kwargs(stage: Any) -> dict:
     return OmegaConf.to_container(cfg, resolve=True) or {}  # type: ignore[return-value]
 
 
-class TrainerStageRunner:
+class BaseStageRunner:
+    """Base stage runner — wraps registry lookup + plugin instantiation + run.
+
+    Subclasses MUST set ``registry`` (ClassVar[Registry]) and ``_registry_label``
+    (ClassVar[str], the uppercase variable name used in error messages).
+    Subclasses MAY override ``run()`` for stage-type-specific behavior
+    (e.g. OtaStageRunner's gate check).
+    """
+
+    registry: ClassVar[Registry]
+    _registry_label: ClassVar[str]
+
+    def run(self, stage: Any, input_card: ModelCard,
+            recipe: ExperimentRecipe) -> ModelCard:
+        """Instantiate a plugin from registry and call its .run().
+
+        Args:
+            stage: Stage config object with ``.component_type`` attr.
+            input_card: Upstream ModelCard passed to the plugin.
+            recipe: ExperimentRecipe passed to the plugin.
+
+        Raises:
+            LookupError: If the plugin is not registered.
+
+        Returns:
+            ModelCard produced by the plugin.
+        """
+        plugin_cls = self.registry.get(stage.component_type)
+        if plugin_cls is None:
+            raise LookupError(
+                f"{self._registry_label}['{stage.component_type}'] not registered")
+        kwargs = _load_stage_kwargs(stage)
+        plugin = plugin_cls(**kwargs)
+        return plugin.run(input_card, recipe)
+
+
+class TrainerStageRunner(BaseStageRunner):
     """Dispatched for stage.component_registry == 'trainers'."""
 
-    def run(self, stage: Any, input_card: ModelCard,
-            recipe: ExperimentRecipe) -> ModelCard:
-        """Instantiate a TRAINERS plugin and call its .run()."""
-        plugin_cls = TRAINERS.get(stage.component_type)
-        if plugin_cls is None:
-            raise LookupError(
-                f"TRAINERS['{stage.component_type}'] not registered")
-        kwargs = _load_stage_kwargs(stage)
-        plugin = plugin_cls(**kwargs)
-        return plugin.run(input_card, recipe)
+    registry = TRAINERS
+    _registry_label = "TRAINERS"
 
 
-class EvaluatorStageRunner:
+class EvaluatorStageRunner(BaseStageRunner):
     """Dispatched for stage.component_registry == 'evaluators'."""
 
-    def run(self, stage: Any, input_card: ModelCard,
-            recipe: ExperimentRecipe) -> ModelCard:
-        """Instantiate an EVALUATORS plugin and call its .run()."""
-        plugin_cls = EVALUATORS.get(stage.component_type)
-        if plugin_cls is None:
-            raise LookupError(
-                f"EVALUATORS['{stage.component_type}'] not registered")
-        kwargs = _load_stage_kwargs(stage)
-        plugin = plugin_cls(**kwargs)
-        return plugin.run(input_card, recipe)
+    registry = EVALUATORS
+    _registry_label = "EVALUATORS"
 
 
-class ConverterStageRunner:
+class ConverterStageRunner(BaseStageRunner):
     """Dispatched for stage.component_registry == 'converters'."""
 
-    def run(self, stage: Any, input_card: ModelCard,
-            recipe: ExperimentRecipe) -> ModelCard:
-        """Instantiate a CONVERTERS plugin and call its .run()."""
-        plugin_cls = CONVERTERS.get(stage.component_type)
-        if plugin_cls is None:
-            raise LookupError(
-                f"CONVERTERS['{stage.component_type}'] not registered")
-        kwargs = _load_stage_kwargs(stage)
-        plugin = plugin_cls(**kwargs)
-        return plugin.run(input_card, recipe)
+    registry = CONVERTERS
+    _registry_label = "CONVERTERS"
 
 
-class DatasetStageRunner:
+class DatasetStageRunner(BaseStageRunner):
     """Dispatched for stage.component_registry == 'datasets'."""
 
-    def run(self, stage: Any, input_card: ModelCard,
-            recipe: ExperimentRecipe) -> ModelCard:
-        """Instantiate a DATASETS plugin and call its .run()."""
-        plugin_cls = DATASETS.get(stage.component_type)
-        if plugin_cls is None:
-            raise LookupError(
-                f"DATASETS['{stage.component_type}'] not registered")
-        kwargs = _load_stage_kwargs(stage)
-        plugin = plugin_cls(**kwargs)
-        return plugin.run(input_card, recipe)
+    registry = DATASETS
+    _registry_label = "DATASETS"
 
 
-class OtaStageRunner:
+class OtaStageRunner(BaseStageRunner):
     """Dispatched for stage.component_registry == 'ota'.
 
     Guards gate_status == 'passed' before delegating to plugin.
     """
+
+    registry = OTA
+    _registry_label = "OTA"
 
     def run(self, stage: Any, input_card: ModelCard,
             recipe: ExperimentRecipe) -> ModelCard:
@@ -121,20 +129,13 @@ class OtaStageRunner:
         if input_card.gate_status != "passed":
             raise GateFailedError(
                 f"OTA stage blocked: gate_status={input_card.gate_status!r}")
-        plugin_cls = OTA.get(stage.component_type)
-        if plugin_cls is None:
-            raise LookupError(
-                f"OTA['{stage.component_type}'] not registered")
-        kwargs = _load_stage_kwargs(stage)
-        plugin = plugin_cls(**kwargs)
-        return plugin.run(input_card, recipe)
+        return super().run(stage, input_card, recipe)
 
 
 # ---------------------------------------------------------------------------
 # Dispatch map: component_registry → runner instance
 # ---------------------------------------------------------------------------
-STAGE_RUNNERS: dict[str, TrainerStageRunner | EvaluatorStageRunner
-                    | ConverterStageRunner | DatasetStageRunner | OtaStageRunner] = {
+STAGE_RUNNERS: dict[str, BaseStageRunner] = {
     "trainers": TrainerStageRunner(),
     "evaluators": EvaluatorStageRunner(),
     "converters": ConverterStageRunner(),

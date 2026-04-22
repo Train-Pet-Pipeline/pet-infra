@@ -124,7 +124,9 @@ def _run_single(recipe_path: Path, overrides: dict[str, Any], out_dir: Path) -> 
     Returns:
         Dict with ``card_path``, ``status``, ``overrides``, and ``resolved_config_uri``.
     """
-    # Lazy imports to avoid circular dependencies at module load time.
+    # Lazy imports to avoid circular dependencies at module load time AND to keep
+    # `pet_run` monkeypatch-able from tests (`tests/test_variations.py` patches
+    # `pet_infra.launcher.pet_run` indirectly via the runner module).
     from pet_infra.orchestrator.runner import pet_run  # noqa: PLC0415
     from pet_infra.recipe.compose import compose_recipe  # noqa: PLC0415
 
@@ -267,9 +269,9 @@ def _compile_clearml_tags(
     """Build per-variation ClearML tags of the form ``variation:<axis>=<value>``.
 
     Each axis whose ``hydra_path`` appears in ``overrides`` contributes one tag.
-    Honors ``PET_FORCE_CLEARML_OFFLINE=1`` as a no-op for the tag-collection
-    path (tags are returned regardless of whether ClearML is reachable; the
-    actual upload would happen inside the per-stage logger when online).
+    Tag collection is pure: it does not read ``PET_FORCE_CLEARML_OFFLINE`` (that
+    flag gates the actual ClearML upload inside the per-stage logger, not the
+    tag-derivation step here).
     """
     tags: list[str] = []
     for axis in variations:

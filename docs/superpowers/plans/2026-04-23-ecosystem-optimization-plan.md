@@ -201,22 +201,27 @@ make lint
 ```
 Expected：exit 0。
 
-- [ ] **Step T6.3：关键节点仓跑 mini E2E**
+- [ ] **Step T6.3：关键节点仓跑 mini E2E（视实际可用命令而定）**
 
-仅对 pet-train / pet-eval / pet-quantize 三仓（其他跳过 T6.3）：
+**适用：** 仅 pet-train / pet-eval / pet-quantize 三仓（其他跳过 T6.3）。
+
+**发现原则：** 实际 Makefile 目前只定义 `setup` / `test` / `lint` / `clean` 四个 target（CLAUDE.md 强制）；**没有预置 smoke 目标**，也**没有 `tests/fixtures/*_smoke.yaml` 预置 recipe**。T6.3 的 E2E 是**走读时识别 + 本仓已有测试集的子集**，命令由 T3 走读产出：
+
+- pet-train 候选：`pytest tests/ -k 'smoke or integration or e2e' -v`（若有命中子集）；否则 `pytest tests/test_sft_trainer.py -v`（核心 trainer 测试走一遍）
+- pet-eval 候选：`pytest tests/test_fusion_recipe.py tests/test_runners -v`（走读确认测试文件名后用实际路径）
+- pet-quantize 候选：`pytest tests/test_noop_converter.py tests/test_plugin_register_noop.py -v`（零 SDK 依赖 + 不需硬件 runner）
+
+**T3 走读阶段产出该仓 T6.3 的具体命令**，写入 findings-<repo>.md 的 "Mini E2E" 段。T6.3 执行时用该命令。
+
+**若 T3 走读发现本仓没有合适的 mini E2E 候选且代码改动涉及 registry / plugin / CLI：** 作为 ② 类 findings 记入（"缺 mini E2E smoke 子集"），推荐处理 = 创建最小 smoke 目标 / 测试，由 T4 裁决是否本轮创建（一般 ✓：对租卡前自检有直接价值）。
+
+- [ ] **Step T6.3 执行：**
 
 ```bash
-# pet-train: 跑最小 SFT smoke recipe（tiny fixture）
-make smoke-sft 2>&1 | tail -40
-
-# pet-eval: 跑 3 evaluator 各一次（含 fusion）
-pet eval --recipe tests/fixtures/eval_smoke.yaml --dry-run-hardware
-
-# pet-quantize: 跑 1 converter 的 dry-run
-pet quantize --recipe tests/fixtures/quantize_smoke.yaml --dry-run-hardware
+<T3 走读确定的命令>  2>&1 | tail -40
 ```
 
-Expected：exit 0 且 artifact 落盘；失败即 regression，回滚 T5 改动。
+Expected：exit 0；若是 pytest，全部绿。失败即 regression，回滚 T5 改动。
 
 ### T7 — 写 architecture.md
 
@@ -1072,21 +1077,34 @@ pet-quantize 走读重点：
 # 删除: "pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra.git@v2.5.0",
 ```
 
-- [ ] **Step 7A.2：在 _register.py 加 pet-infra fail-fast guard**
+- [ ] **Step 7A.2：核对已有 guard + 更新过期字段**
 
-按 DEV_GUIDE §11.3 模板：
+**现状（实测 2026-04-23）：** `src/pet_quantize/plugins/_register.py`（注意是嵌套在 `plugins/` 下，**不是 top-level**）已有 guard：
 
 ```python
-# src/pet_quantize/_register.py 顶部（任何 import 之前）
-try:
-    import pet_infra  # noqa: F401
-except ImportError as e:
-    raise ImportError(
-        "pet-quantize requires pet-infra to be installed first. "
-        "Install via 'pip install pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@<tag>' "
-        "using the tag pinned in pet-infra/docs/compatibility_matrix.yaml."
-    ) from e
+# 当前实现
+def register_all() -> None:
+    try:
+        import pet_infra  # noqa: F401
+    except ImportError as e:
+        raise RuntimeError(
+            "pet-quantize v2 requires pet-infra. Install via matrix row 2026.08."
+        ) from e
+    # ... 后续 import plugin 模块
 ```
+
+**与 DEV_GUIDE §11.3 模板差异：**
+1. guard 位于 `register_all()` 函数内（延迟到 plugin 注册时触发），**不是** 模板要求的"模块顶部、任何 import 之前"
+2. raise 的是 `RuntimeError` 而不是模板的 `ImportError`
+3. 错误消息引用 "matrix row 2026.08"（已过期，当前是 2026.09，本轮将推 2026.10）
+
+**裁决（T4 gate 讨论 + 如果 T3 走读未单独记这条，在 T5.4 时补）：**
+- **选项 X**（保守）：保持延迟模式 + RuntimeError 不动；**只**更新错误消息 "matrix row 2026.08" → "matrix row 2026.10"；**同时**更新 DEV_GUIDE §11.3 模板，承认延迟模式并列出两种变体（顶部 ImportError / register_all RuntimeError 各自适用场景）
+- **选项 Y**（严格）：把 guard 移到模块顶部按 §11.3 模板严格实施；现有 register_all 内部 guard 删除；raise ImportError；matrix 字符串更新
+
+初判（CTO 视角）：**选项 X** — 延迟模式已在生产多个版本无事故；顶部 guard 会让纯 import 都强制依赖 pet_infra（影响 IDE tooling / 静态分析工具直接读源码的场景）；选 X 既修 stale matrix 字段，又让 DEV_GUIDE 与实现对齐（feedback_devguide_sync 精神）。
+
+**Gate：** 本步骤在 T3/T4 findings 阶段作为 ② 或 ③ 类登记，T4 用户裁决 X / Y。
 
 - [ ] **Step 7A.3：更新 CI workflow 装序到 4 步（§11.4）**
 
@@ -1215,7 +1233,9 @@ pet-ota 走读重点：
 
 同 Phase 7 的 7A（流程相同，文件名换 pet-ota）。
 
-- [ ] **Step 8A.1–8A.7：** 按 7A.1–7A.7 执行，所有 "pet-quantize" 替换为 "pet-ota"
+**现状（实测 2026-04-23）：** `src/pet_ota/plugins/_register.py`（嵌套在 `plugins/` 下）同样已有 guard + 同样的过期字段："pet-ota v2 requires pet-infra. Install via matrix row 2026.08."
+
+**Step 8A.1–8A.7：** 按 7A.1–7A.7 执行，所有 "pet-quantize" 替换为 "pet-ota"。T4 裁决选 X（保守：更新 matrix 字段 + 同步 DEV_GUIDE §11.3）或 Y（严格：移 guard 到模块顶部）— 两仓决策必须一致（不允许一仓 X 一仓 Y，生态优化目标是一致性）。
 
 Branch：`feature/eco-pet-ota-peerdep-fix`
 
@@ -1296,8 +1316,10 @@ Version bump：**2.1.0 → 2.2.0** minor
 - [ ] 执行 Template **T3.1 / T3.2**
 
 pet-id 走读重点：
-- `src/pet_id/` PetCard registry + petid CLI（register / identify / list / show / delete）
-- 5 个可选 extras（detector / reid / pose / narrative / tracker）
+- `src/pet_id_registry/` PetCard registry + petid CLI（register / identify / list / show / delete）
+- `src/purrai_core/` 核心识别逻辑（detection / re-id / pose / narrative / tracker 的实现）
+- 包结构：`pet_id_registry` 对外 CLI 入口；`purrai_core` 算法核心
+- 5 个可选 extras（detector / reid / pose / narrative / tracker）对应 `purrai_core` 可选子模块
 - 独立 CLI 工具，不 import 任何 pet-* 包（spec §5.2 实锤）
 
 ### Task 9.3：T4 / T5 / T6 / T7 / T8 / T9
@@ -1307,8 +1329,9 @@ pet-id 走读重点：
 pet-id architecture.md **必须包含**：
 - §1 明确声明 "pet-id 是独立 CLI 工具，不参与 peer-dep 生态；matrix 登记仅作版本对齐"
 - §2 输入输出契约 写清对 pet-* 无依赖；对外输出 PetCard（独立 pydantic model，不在 pet-schema）
+- §3 架构总览 讲清 `pet_id_registry`（CLI 入口）vs `purrai_core`（算法核心）的分层关系
 - §6 依赖管理 只列第三方（numpy / pydantic / cv2 / torch / ...）
-- §8 已知复杂点 —— 5 个 extras 的取舍
+- §8 已知复杂点 —— 5 个 extras 的取舍；为什么包结构是 `pet_id_registry` + `purrai_core` 而不是合成 `pet_id`
 
 Version bump：视 findings 决定；独立工具一般不 bump（除非代码改动）
 

@@ -109,26 +109,26 @@ Python 无原生 peer-dep 概念，项目通过以下约定模拟：
 | `compatibility_matrix.yaml` | 每次 release 新增一行，历史行降级为 archive |
 | matrix 格式 | 无 `-rc` 后缀；`releases[-1]` 是最新行 |
 | `_register.py` guard | pet-infra 本身在 `__init__.py` 用 `ImportError`；下游在 `register_all()` 内用 `RuntimeError` |
-| 跨仓 plugin dep | pet-eval 依赖 pet-train + pet-quantize 作为 runtime peer（无 pin，matrix 行锁定）；见 §4 6-step 装序 |
+| 跨仓 plugin dep | pet-eval 依赖 pet-train + pet-quantize 作为 runtime peer；见 §4 8-step 装序 |
 | Phase 7/8 债务 | pet-quantize / pet-ota 当前仍有硬 pin 残留，Phase 7/8 修复 |
 
 ---
 
 ## 4. 装序矩阵表 ★依赖集中一处核心落点
 
-> 此表是所有仓库安装顺序的唯一权威来源。CI workflow 从 `compatibility_matrix.yaml releases[-1]` 行取版本号。
+> 此表记录**两个状态**：**当前实际** (Actual) = 今天 CI workflow 跑的装序；**β 目标** (Target) = 所有 Phase 完成后的装序。`Current` 列里标了 ✓ 表示仓已迁移到 β；`(Phase N target)` 表示未迁移，本仓 Phase 会修到 β。CI workflow 路径从 `compatibility_matrix.yaml releases[-1]` 行取版本号。
 
-| 仓 | peer-dep 列表 | 装序步数 | CI workflow | version assertion |
+| 仓 | Current (2026-04-23) | Target β (Phase 对齐后) | CI workflow | 迁移 Phase |
 |---|---|---|---|---|
-| pet-schema | （链首，无）| 1 步 (`pip install -e .`) | `pet-schema/.github/workflows/ci.yml` | `pet_schema.__version__ == X.Y.Z` |
-| pet-infra | pet-schema (β peer) | 3 步 (① pet-schema peer → ② `pip install -e ".[dev]"` → ③ version assert) | `pet-infra/.github/workflows/ci.yml` | `pet_infra.__version__` matches |
-| pet-data | pet-schema, pet-infra | 4 步 (① schema → ② infra → ③ `-e . --no-deps` → ④ `-e .[dev]` + assert) | `pet-data/.github/workflows/ci.yml` | `pet_data.__version__` matches |
-| pet-annotation | pet-schema, pet-infra | 4 步 | `pet-annotation/.github/workflows/ci.yml` | `pet_annotation.__version__` matches |
-| pet-train | pet-schema, pet-infra | 4 步 | `pet-train/.github/workflows/ci.yml` | `pet_train.__version__` matches |
-| pet-eval | pet-schema, pet-infra, pet-train, pet-quantize | 6 步 (① schema → ② infra → ③ train → ④ quantize → ⑤ `-e . --no-deps` → ⑥ `-e .[dev]` + assert) | `pet-eval/.github/workflows/ci.yml` | 4 模块版本断言 |
-| pet-quantize | pet-schema, pet-infra | 4 步（Phase 7 将清理硬 pin 残留） | `pet-quantize/.github/workflows/ci.yml` | `pet_quantize.__version__` matches |
-| pet-ota | pet-schema, pet-infra, pet-quantize | 5 步（Phase 8 将修复 peer-dep 硬 pin 残留） | `pet-ota/.github/workflows/ci.yml` | `pet_ota.__version__` matches |
-| pet-id | 无 pet-* 依赖（独立工具） | 1 步 (`pip install -e ".[dev]"`) | `pet-id/.github/workflows/ci.yml` | `pet_id.__version__` matches |
+| pet-schema | ✓ β (链首无 peer-dep) — 1 步 | 同 Current | `pet-schema/.github/workflows/ci.yml` | Phase 1 ✓ 已完成 |
+| pet-infra | ✓ β (pet-schema peer) — 3 步 (① pet-schema peer → ② `-e ".[dev,api,sync]"` → ③ test_version parity) | 同 Current | `pet-infra/.github/workflows/ci.yml` | Phase 2 ✓ 本次 |
+| pet-data | 仍硬 pin `pet-schema@v2.0.0`；CI 4 步（pet-infra peer + editable + dev extras + assert） | β: pet-schema + pet-infra 双 peer，5 步 | `pet-data/.github/workflows/ci.yml` | Phase 3 target |
+| pet-annotation | 仍硬 pin `pet-schema@v2.1.0`；CI 4 步 | β: 双 peer，5 步 | `pet-annotation/.github/workflows/ci.yml` | Phase 4 target |
+| pet-train | pet-schema 无 pin bare string；CI 4 步 | β: 双 peer + fail-fast guard，5 步 | `pet-train/.github/workflows/ci.yml` | Phase 5 target |
+| pet-eval | pet-schema 无 pin；CI **8 步** (① schema → ② infra → ③ train → ④ quantize → ⑤ editable --no-deps → ⑥ editable dev → ⑦ re-pin schema+infra → ⑧ 4-module assert) | β: 同上 + fail-fast guard | `pet-eval/.github/workflows/ci.yml` | Phase 6 target |
+| pet-quantize | 硬 pin 两个 (`pet-schema@v2.4.0` + `pet-infra@v2.5.0`)；CI 4 步 | β: 双 peer，5 步 | `pet-quantize/.github/workflows/ci.yml` | Phase 7 target |
+| pet-ota | 硬 pin `pet-infra@v2.5.0`；`pet-quantize` 在 `[signing]` 可选；CI **4 步**（pet-infra peer + editable + dev + assert） | β: pet-schema N/A (本仓不依赖) + pet-infra peer + pet-quantize 运行时 peer | `pet-ota/.github/workflows/ci.yml` | Phase 8 target |
+| pet-id | ✓ 无 pet-* 依赖（独立工具）— 1 步 | 同 Current | TBD（pet-id 当前无 `.github/workflows/` 目录，Phase 9 可能新增） | Phase 9 ✓ 独立 |
 
 ### cross-repo-smoke-install.yml
 

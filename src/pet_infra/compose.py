@@ -1,5 +1,9 @@
 """Top-level recipe composition with Hydra defaults-list resolution.
 
+Canonical entry point for recipe composition. Previously split across
+``compose.py`` (simple path) and ``recipe/compose.py`` (full path with
+overrides + sha); merged here to a single source of truth.
+
 Phase 3B: adds ``defaults: [base_a, sub/override]`` support relative to the
 recipe file's directory. Later entries override earlier ones; the top-level
 file overrides all defaults. Circular chains raise ComposeError.
@@ -8,8 +12,12 @@ Legacy recipes without a ``defaults:`` key work unchanged (backward compat).
 """
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Sequence
 from pathlib import Path
 
+import yaml
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from pet_schema import ExperimentRecipe
 
@@ -57,41 +65,51 @@ def _resolve_defaults(recipe_path: Path, visited: set[Path] | None = None) -> Di
     return merged
 
 
-def compose_recipe(path: str | Path) -> ExperimentRecipe:
-    """Load a yaml recipe, resolve any defaults: list, and validate.
+def compose_recipe(
+    path: str | Path,
+    overrides: Sequence[str] = (),
+) -> tuple[ExperimentRecipe, dict, str]:
+    """Load a yaml recipe, resolve defaults-list, apply overrides, validate.
 
-    Supports Hydra-style ``defaults: [base_a, sub/override]`` lists resolved
-    relative to the recipe file's directory. Recipes without a ``defaults:``
-    key work unchanged (backward compat with Phase 3A).
+    Supports Phase 3B Hydra-style ``defaults: [base_a, sub/override]`` lists
+    resolved relative to the recipe file's directory (via
+    ``_resolve_defaults``). Also strips compose-time interpolation variables
+    (e.g. ``smoke_tier``) and normalises dict-keyed stages to the
+    ``list[RecipeStage]`` form Pydantic requires.
 
-    For recipes that wrap fields under a ``recipe:`` top-level key (e.g.
-    Phase 3A smoke recipes), the ``recipe:`` section is unwrapped before
-    validation.
+    Legacy single-file recipes without ``defaults:`` work unchanged.
 
     Args:
         path: Path to the recipe yaml file.
+        overrides: Iterable of ``key.path=<yaml-literal>`` strings.
 
     Returns:
-        Validated ExperimentRecipe instance.
+        Tuple ``(recipe, resolved_dict, config_sha)`` where ``config_sha`` is
+        the sha256 of the resolved config's canonical JSON form.
 
     Raises:
         ComposeError: On circular chains or missing defaults targets.
         pydantic.ValidationError: On schema validation failure.
     """
+    # Phase 3B: use _resolve_defaults for defaults-list support; falls back
+    # gracefully for legacy recipes that have no defaults: key.
     cfg = _resolve_defaults(Path(path))
+    for ov in overrides:
+        key, _, val = ov.partition("=")
+        OmegaConf.update(cfg, key, yaml.safe_load(val))
     resolved = OmegaConf.to_container(cfg, resolve=True)
     assert isinstance(resolved, dict)
     recipe_section = resolved["recipe"] if "recipe" in resolved else resolved
-    # Phase 3B: strip compose-time variables (e.g. smoke_tier) that are not
-    # ExperimentRecipe fields — these are used for OmegaConf interpolation only
-    # and must not be passed to Pydantic (extra='forbid').
+    # Strip compose-time variables (e.g. smoke_tier) not in ExperimentRecipe schema.
     known_fields = set(ExperimentRecipe.model_fields)
     recipe_section = {k: v for k, v in recipe_section.items() if k in known_fields}
-    # Phase 3B: fragments use dict-keyed stages so OmegaConf can deep-merge them.
-    # Convert dict[str, dict] → list[dict] with `name` injected from the key
-    # before passing to Pydantic (which requires list[RecipeStage]).
+    # Normalise dict-keyed stages → list[RecipeStage] (Phase 3B fragment style).
     if isinstance(recipe_section.get("stages"), dict):
         recipe_section["stages"] = [
             {"name": name, **body} for name, body in recipe_section["stages"].items()
         ]
-    return ExperimentRecipe.model_validate(recipe_section)
+    recipe = ExperimentRecipe.model_validate(recipe_section)
+    config_sha = hashlib.sha256(
+        json.dumps(resolved, sort_keys=True, default=str).encode()
+    ).hexdigest()
+    return recipe, resolved, config_sha

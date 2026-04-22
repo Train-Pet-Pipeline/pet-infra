@@ -18,7 +18,7 @@ RECIPES = Path(__file__).parent.parent / "recipes"
 @pytest.mark.parametrize("recipe_name", ["smoke_tiny", "smoke_mps", "smoke_small", "release"])
 def test_phase3b_recipe_composes(recipe_name: str) -> None:
     """Each Phase 3B recipe must compose to a valid ExperimentRecipe."""
-    recipe = compose_recipe(RECIPES / f"{recipe_name}.yaml")
+    recipe, _, _ = compose_recipe(RECIPES / f"{recipe_name}.yaml")
     assert recipe.recipe_id == recipe_name
     assert len(recipe.stages) >= 2
     valid_registries = {"trainers", "evaluators", "converters", "datasets", "ota"}
@@ -28,14 +28,14 @@ def test_phase3b_recipe_composes(recipe_name: str) -> None:
 
 def test_release_recipe_has_deploy_stage() -> None:
     """Release recipe must contain a deploy stage."""
-    recipe = compose_recipe(RECIPES / "release.yaml")
+    recipe, _, _ = compose_recipe(RECIPES / "release.yaml")
     stage_names = {s.name for s in recipe.stages}
     assert "deploy" in stage_names
 
 
 def test_smoke_tiny_has_minimal_dag() -> None:
     """smoke_tiny skips eval_quant and calibrate; has train → quantize → deploy."""
-    recipe = compose_recipe(RECIPES / "smoke_tiny.yaml")
+    recipe, _, _ = compose_recipe(RECIPES / "smoke_tiny.yaml")
     stage_names = {s.name for s in recipe.stages}
     assert "eval_quant" not in stage_names
     assert "calibrate" not in stage_names
@@ -44,7 +44,7 @@ def test_smoke_tiny_has_minimal_dag() -> None:
 
 def test_smoke_mps_has_full_dag() -> None:
     """smoke_mps has all 6 pipeline stages."""
-    recipe = compose_recipe(RECIPES / "smoke_mps.yaml")
+    recipe, _, _ = compose_recipe(RECIPES / "smoke_mps.yaml")
     stage_names = {s.name for s in recipe.stages}
     full_dag = {"train", "eval_fp", "calibrate", "quantize", "eval_quant", "deploy"}
     assert full_dag.issubset(stage_names)
@@ -52,7 +52,7 @@ def test_smoke_mps_has_full_dag() -> None:
 
 def test_smoke_tiny_deploy_depends_on_quantize() -> None:
     """smoke_tiny deploy stage must depend on quantize, not eval_quant."""
-    recipe = compose_recipe(RECIPES / "smoke_tiny.yaml")
+    recipe, _, _ = compose_recipe(RECIPES / "smoke_tiny.yaml")
     deploy = next(s for s in recipe.stages if s.name == "deploy")
     assert deploy.depends_on == ["quantize"]
 
@@ -66,5 +66,5 @@ def test_recipes_scope_values() -> None:
         "release": "cross_repo",
     }
     for name, scope in expected.items():
-        recipe = compose_recipe(RECIPES / f"{name}.yaml")
+        recipe, _, _ = compose_recipe(RECIPES / f"{name}.yaml")
         assert recipe.scope == scope, f"{name} scope mismatch"

@@ -232,8 +232,8 @@ def validate_cmd(
 
     if recipe_path:
         # Existing Phase 3A recipe preflight path
+        from pet_infra.compose import compose_recipe
         from pet_infra.plugins.discover import discover_plugins
-        from pet_infra.recipe.compose import compose_recipe
         from pet_infra.recipe.preflight import PreflightError, preflight
 
         discover_plugins()

@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import yaml
 from pet_schema.model_card import ModelCard
 
+from pet_infra.compose import compose_recipe
 from pet_infra.experiment_logger.factory import build_experiment_logger
 from pet_infra.recipe.card_id import precompute_card_id
-from pet_infra.recipe.compose import compose_recipe
 
 from .cache import StageCache
 from .dag import build_dag

@@ -25,6 +25,8 @@ class TestListPlugins:
         result = runner.invoke(main, ["list-plugins", "--json"])
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
-        expected_keys = {"trainers", "evaluators", "converters", "metrics", "datasets", "storage", "ota"}
+        expected_keys = {
+            "trainers", "evaluators", "converters", "metrics", "datasets", "storage", "ota"
+        }
         assert expected_keys == set(data.keys())
         assert "local" in data["storage"]

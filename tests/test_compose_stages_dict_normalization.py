@@ -39,7 +39,7 @@ default_storage: local
 required_plugins: []
 """
     )
-    recipe = compose_recipe(recipe_yaml)
+    recipe, _, _ = compose_recipe(recipe_yaml)
     stage_names = [s.name for s in recipe.stages]
     assert stage_names == ["train", "eval"]
 
@@ -67,7 +67,7 @@ default_storage: local
 required_plugins: []
 """
     )
-    recipe = compose_recipe(recipe_yaml)
+    recipe, _, _ = compose_recipe(recipe_yaml)
     assert len(recipe.stages) == 1
     stage = recipe.stages[0]
     assert stage.name == "quantize"
@@ -99,5 +99,5 @@ default_storage: local
 required_plugins: []
 """
     )
-    recipe = compose_recipe(recipe_yaml)
+    recipe, _, _ = compose_recipe(recipe_yaml)
     assert [s.name for s in recipe.stages] == ["train"]

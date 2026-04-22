@@ -27,7 +27,7 @@ jobs:
       - name: Compose smoke_tiny (validates recipe structure + plugin resolution)
         run: |
           python -c "
-          from pet_infra.recipe.compose import compose_recipe
+          from pet_infra.compose import compose_recipe
           r, d, sha = compose_recipe('recipes/smoke_tiny.yaml')
           print(r.recipe_id, sha[:8])
           print('smoke_tiny composed OK')

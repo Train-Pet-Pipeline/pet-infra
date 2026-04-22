@@ -90,6 +90,9 @@ def _run_single(recipe_path: Path, overrides: dict[str, Any], out_dir: Path) -> 
     # internally; resume-from-cache makes the duplicate work cheap.
     _, resolved_dict, _ = compose_recipe(recipe_path, overrides=override_list)
     cfg_path = (out_dir / "resolved_config.yaml").resolve()
+    # resolved_dict is OmegaConf.to_container(..., resolve=True); yaml.safe_dump on
+    # it == OmegaConf.to_yaml(cfg, resolve=True) modulo formatting. P1-E SHA-verifies
+    # against the same canonical resolved-dict form (see recipe/compose.py).
     cfg_path.write_text(yaml.safe_dump(resolved_dict, sort_keys=True))
     resolved_config_uri = f"file://{cfg_path}"
 

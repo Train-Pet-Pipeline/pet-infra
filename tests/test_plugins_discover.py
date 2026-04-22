@@ -19,7 +19,10 @@ _EVICT_MODULES = [
 ]
 # Storage backends that pet-infra ships first-party (must be popped + restored
 # in lockstep with _EVICT_MODULES so re-import re-runs @register_module).
-_FIRST_PARTY_STORAGE_KEYS = ["local", "s3", "http"]
+# NOTE: ``file`` is registered by the same LocalStorage import as ``local``
+# (dual @register_module decorators, P1-E).  Both must be cleared so a fresh
+# import re-executes both decorators without duplicate-registration errors.
+_FIRST_PARTY_STORAGE_KEYS = ["local", "file", "s3", "http"]
 
 
 @pytest.fixture()

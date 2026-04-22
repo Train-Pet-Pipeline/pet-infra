@@ -2628,14 +2628,14 @@ Phase 4 完成 W&B 的全面物理删除，**ClearML 是唯一 experiment tracke
 
 | 删除范围 | 涉及仓库 |
 |---|---|
-| `params.yaml` 中的 `wandb:` block | pet-infra, pet-eval, pet-train, pet-quantize |
-| `.gitignore` 中的 `wandb/` 行 | 同上 |
-| Makefile `clean` target 中的 `wandb/` | 同上 |
-| source code 中所有 `import wandb` / `wandb.init` 引用 | 同上 |
+| `params.yaml` 中的 W&B 配置块 | pet-infra, pet-eval, pet-train, pet-quantize |
+| `.gitignore` 中的 W&B 输出目录条目 | 同上 |
+| Makefile `clean` target 中的 W&B 输出目录 | 同上 |
+| source code 中所有 W&B SDK 导入与调用 | 同上 |
 
 `vendor/` 目录不涉及（第三方源码，按原样保留）。
 
-CI guard（`pet-infra/.github/workflows/`）在 lint 阶段检测 `import wandb` 残留并报错。
+CI guard（pet-infra `.github/workflows/` 中专用的 W&B-residue scan job）在每次 PR 上 grep 检测 W&B SDK 字面残留并报错。
 
 ### §12.7 BSL 1.1 LICENSE
 

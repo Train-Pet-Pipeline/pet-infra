@@ -15,17 +15,59 @@ def main() -> None:
 _PARALLEL_LAUNCHERS = frozenset({"joblib", "ray", "submitit"})
 
 
+def _check_cartesian_size_from_overrides(overrides: tuple[str, ...]) -> None:
+    """Run cartesian preflight on CLI-driven multirun overrides (P1-D, spec R6).
+
+    Inspects each override of the form ``+ablation.<axis>=[v1,v2,v3]`` (and the
+    Hydra ``key=val1,val2,val3`` short form) to compute the cartesian-product
+    size and delegate to ``check_cartesian_size``. Overrides that don't look
+    like sweep axes (single value, no comma-separated list) contribute factor 1
+    and have no effect on the size.
+
+    Args:
+        overrides: Tuple of raw Hydra-style override strings from the CLI.
+
+    Raises:
+        CartesianTooLargeError: When the product exceeds the fail threshold
+            without ``PET_ALLOW_LARGE_SWEEP=1``.
+    """
+    from pet_infra.sweep_preflight import check_cartesian_size  # noqa: PLC0415
+
+    total = 1
+    for override in overrides:
+        _key, eq, value = override.partition("=")
+        if not eq:
+            continue
+        value = value.strip()
+        # Detect Hydra sweep list syntax: bracketed [a,b,c] or bare a,b,c.
+        if value.startswith("[") and value.endswith("]"):
+            inner = value[1:-1]
+            count = len([p for p in inner.split(",") if p.strip()])
+        elif "," in value:
+            count = len([p for p in value.split(",") if p.strip()])
+        else:
+            count = 1
+        if count > 1:
+            total *= count
+    check_cartesian_size(total)
+
+
 def _check_multirun_launcher(overrides: tuple[str, ...]) -> None:
     """Raise UsageError if any override selects a parallel Hydra launcher.
 
     Phase 3A spec §4.5 defers parallel execution; only the ``basic`` (in-process
     sequential) launcher is permitted during multirun sweeps.
 
+    Phase 4 P1-D additionally runs the cartesian preflight (warn >16, fail >64;
+    ``PET_ALLOW_LARGE_SWEEP=1`` overrides) for CLI-driven sweeps so the same
+    safety net protects both recipe.variations and ``-m`` paths.
+
     Args:
         overrides: Tuple of raw Hydra-style override strings from the CLI.
 
     Raises:
         click.UsageError: When a non-basic launcher is detected.
+        CartesianTooLargeError: When the cartesian preflight fails.
     """
     for override in overrides:
         # Match patterns like "hydra/launcher=joblib" or "+hydra/launcher=ray"
@@ -37,10 +79,11 @@ def _check_multirun_launcher(overrides: tuple[str, ...]) -> None:
                 "hydra/launcher or use the default basic launcher. "
                 "File a ticket to request parallel sweep support."
             )
+    _check_cartesian_size_from_overrides(overrides)
 
 
 @main.command("run")
-@click.argument("recipe_path", type=click.Path())
+@click.argument("recipe_path", type=click.Path(), default=None, required=False)
 @click.argument("overrides", nargs=-1)
 @click.option("--no-resume", is_flag=True, help="Disable resume-from-cache; re-run all stages.")
 @click.option(
@@ -49,9 +92,64 @@ def _check_multirun_launcher(overrides: tuple[str, ...]) -> None:
     is_flag=True,
     help="Run a sweep (serial trials only; parallel launchers are not supported in Phase 3A).",
 )
-def run_cmd(recipe_path: str, overrides: tuple[str, ...], no_resume: bool, multirun: bool) -> None:
-    """Execute a recipe DAG with optional resume from cache."""
-    from pet_infra.orchestrator.runner import GateFailedError, pet_run
+@click.option(
+    "--replay",
+    "replay_card_id",
+    default=None,
+    metavar="CARD_ID",
+    help=(
+        "Replay a previous run by card ID (P1-E, spec §1.4). "
+        "Loads the card from PET_CARD_REGISTRY, verifies sha256 of "
+        "resolved_config_uri, warns on git_shas drift, then re-runs. "
+        "Exclusive with RECIPE_PATH."
+    ),
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help=(
+        "When combined with --replay: print the resolved config YAML and exit "
+        "without invoking the launcher."
+    ),
+)
+def run_cmd(
+    recipe_path: str | None,
+    overrides: tuple[str, ...],
+    no_resume: bool,
+    multirun: bool,
+    replay_card_id: str | None,
+    dry_run: bool,
+) -> None:
+    """Execute a recipe DAG with optional resume from cache.
+
+    Normal mode: ``pet run <recipe_path> [overrides...]``
+
+    Replay mode (P1-E): ``pet run --replay <card_id> [--dry-run]``
+    Reloads the resolved config stored by a previous run, verifies its sha256
+    against the card's hydra_config_sha (fail-fast), warns on git_shas drift,
+    and re-invokes the launcher deterministically.
+    """
+    # --- replay path ---
+    if replay_card_id is not None:
+        from pet_infra.replay import replay  # noqa: PLC0415
+
+        try:
+            result = replay(replay_card_id, dry_run=dry_run)
+        except (FileNotFoundError, ValueError) as e:
+            click.secho(str(e), fg="red", err=True)
+            raise SystemExit(1)
+        if result is not None:
+            click.secho(f"replay complete: card_id={result.id}", fg="green")
+        return
+
+    # --- normal run path ---
+    if recipe_path is None:
+        raise click.UsageError(
+            "Either RECIPE_PATH or --replay <card_id> is required. "
+            "Run `pet run --help` for usage."
+        )
+
+    from pet_infra.orchestrator.runner import GateFailedError, pet_run  # noqa: PLC0415
 
     # Guard runs before path validation so that a bad launcher flag surfaces
     # a clear actionable error even when the recipe file does not yet exist.

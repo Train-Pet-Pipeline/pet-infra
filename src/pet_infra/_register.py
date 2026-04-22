@@ -15,8 +15,18 @@ def register_all() -> None:
     from pet_infra.hydra_plugins.structured import register as _register_hydra
     from pet_infra.registry import EVALUATORS, STORAGE
 
+    # ``local`` and ``file`` are both registered by the same LocalStorage import
+    # (dual @register_module decorators, P1-E).  Guard on ``local`` is sufficient:
+    # the two names are always cleared together by test fixtures and always
+    # registered together on import.
     if "local" not in STORAGE.module_dict:
         from pet_infra.storage import local  # noqa: F401
+
+    if "s3" not in STORAGE.module_dict:
+        from pet_infra.storage import s3  # noqa: F401
+
+    if "http" not in STORAGE.module_dict:
+        from pet_infra.storage import http  # noqa: F401
 
     if "pet_infra.noop_evaluator" not in EVALUATORS.module_dict:
         from pet_infra.evaluators import noop  # noqa: F401

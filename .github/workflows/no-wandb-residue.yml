@@ -1,0 +1,49 @@
+name: no-wandb-residue
+
+# Positive-list CI guard: scans only the live runtime surface for W&B residue.
+#
+# Why positive-list instead of exclusion-list:
+#   Historical archives (docs/superpowers/specs/, docs/superpowers/plans/,
+#   docs/retrospectives/, docs/phase-*-audit.md) contain "wandb" in the context
+#   of describing its removal. Maintaining an exclusion list for these paths is
+#   fragile — every new design doc that mentions W&B must be added to the list.
+#   Instead, we enumerate only what SHOULD be clean: live code, configs, and
+#   active operational docs. Frozen historical records are never scanned.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for wandb references in live first-party code and active docs
+        run: |
+          set -e
+
+          # Part 1: all live code / config files (recursively).
+          # Exclude this guard workflow itself (it necessarily contains the pattern in comments).
+          MATCHES_CODE=$(grep -rEn '\bwandb\b' \
+            --include='*.py' --include='*.yaml' --include='*.yml' \
+            --include='*.toml' --include='*.sh' \
+            --exclude='no-wandb-residue.yml' \
+            src/ tests/ scripts/ shared/ .github/ 2>/dev/null || true)
+
+          # Part 2: specific live operational docs
+          MATCHES_DOCS=$(grep -En '\bwandb\b' \
+            docker-compose.yml Makefile .gitignore \
+            docs/DEVELOPMENT_GUIDE.md docs/runbook.md docs/onboarding.md \
+            2>/dev/null || true)
+
+          MATCHES="${MATCHES_CODE}${MATCHES_DOCS}"
+
+          if [ -n "$MATCHES" ]; then
+            echo "::error::W&B residue found in live code or active docs. Remove it and use ClearML instead."
+            echo "$MATCHES"
+            exit 1
+          fi
+
+          echo "Clean — no W&B residue detected in live surface."

@@ -1,0 +1,25 @@
+recipe_id: with-link-to-test
+description: link_to co-iteration fixture (axis B link_to A; both have 3 values; result = 3 not 9)
+scope: single_repo
+schema_version: "2.0.0"
+stages:
+  - name: sft
+    component_registry: trainers
+    component_type: sft_lora
+    inputs: {}
+    config_path: configs/sft.yaml
+    depends_on: []
+variations:
+  - name: lora_r
+    stage: sft
+    hydra_path: trainer.lora_r
+    values: [4, 8, 16]
+  - name: lora_alpha
+    stage: sft
+    hydra_path: trainer.lora_alpha
+    values: [8, 16, 32]
+    link_to: lora_r
+produces:
+  - sft_model
+default_storage: local
+required_plugins: []

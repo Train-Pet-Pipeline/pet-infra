@@ -117,7 +117,7 @@ Secrets to rotate every 90 days:
 | Secret | Where used | Steps |
 |---|---|---|
 | `CROSS_REPO_TOKEN` | All repos CI | Generate new PAT → update in GitHub org secrets → verify schema guard CI |
-| `WANDB_API_KEY` | pet-train, pet-eval | Rotate in W&B settings → update in repo secrets |
+| `CLEARML_API_ACCESS_KEY` / `CLEARML_API_SECRET_KEY` | pet-train, pet-eval | Rotate in ClearML settings → update in repo secrets |
 | `LABEL_STUDIO_TOKEN` | pet-annotation | Rotate in Label Studio → update in repo secrets |
 | `DB_URL` / DB password | pet-data, pet-annotation | Rotate DB password → update connection string in secrets |
 

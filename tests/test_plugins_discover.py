@@ -14,11 +14,12 @@ ALL_REGISTRIES = [TRAINERS, EVALUATORS, CONVERTERS, METRICS, DATASETS, STORAGE]
 _EVICT_MODULES = [
     "pet_infra.storage.local",
     "pet_infra.storage.s3",
+    "pet_infra.storage.http",
     "pet_infra.storage",
 ]
 # Storage backends that pet-infra ships first-party (must be popped + restored
 # in lockstep with _EVICT_MODULES so re-import re-runs @register_module).
-_FIRST_PARTY_STORAGE_KEYS = ["local", "s3"]
+_FIRST_PARTY_STORAGE_KEYS = ["local", "s3", "http"]
 
 
 @pytest.fixture()

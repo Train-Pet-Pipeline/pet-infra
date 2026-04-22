@@ -49,6 +49,13 @@ def test_s3_rejects_wrong_scheme() -> None:
         storage.read("file:///tmp/x")
 
 
+def test_s3_rejects_empty_bucket() -> None:
+    """S3Storage refuses ``s3://`` URIs that omit the bucket."""
+    storage = S3Storage()
+    with pytest.raises(ValueError, match="bucket"):
+        storage.read("s3://")
+
+
 def test_s3_exists_false_for_missing_key(s3_bucket: dict[str, str | None]) -> None:
     """exists() returns False (not raises) for a key that was never written."""
     storage = S3Storage(endpoint_url=s3_bucket["endpoint_url"])

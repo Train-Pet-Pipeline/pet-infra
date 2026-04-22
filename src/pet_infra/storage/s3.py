@@ -52,12 +52,14 @@ class S3Storage(BaseStorage):
             A ``(bucket, key)`` tuple where ``key`` has no leading slash.
 
         Raises:
-            ValueError: If the URI scheme is not ``s3``.
+            ValueError: If the URI scheme is not ``s3`` or the bucket is empty.
         """
         parsed = urlparse(uri)
         if parsed.scheme != self.scheme:
             raise ValueError(f"S3Storage cannot handle scheme={parsed.scheme!r}")
         bucket = parsed.netloc
+        if not bucket:
+            raise ValueError(f"S3 URI missing bucket: {uri!r}")
         key = parsed.path.lstrip("/")
         return bucket, key
 
@@ -123,5 +125,5 @@ class S3Storage(BaseStorage):
         bucket, key_prefix = self._split(prefix)
         paginator = self._client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
-            for item in page.get("Contents", []) or []:
+            for item in page.get("Contents", []):
                 yield f"{self.scheme}://{bucket}/{item['Key']}"

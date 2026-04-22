@@ -3,7 +3,7 @@
 All notable changes to `pet-infra` are documented here.
 Versions follow [Semantic Versioning](https://semver.org/) with `-rc<N>` suffixes for release candidates.
 
-## 2.5.0-rc1 — 2026-04-22
+## 2.5.0 — 2026-04-22
 
 ### Added
 - `S3Storage` plugin (P1-A) — boto3-backed, scheme `s3://`. Supports read/write/exists/iter_prefix.
@@ -17,7 +17,7 @@ Versions follow [Semantic Versioning](https://semver.org/) with `-rc<N>` suffixe
 - `no-wandb-residue` CI guard workflow (`.github/workflows/no-wandb-residue.yml`); positive-list scan of live code, configs, and active operational docs (P1-F).
 
 ### Changed
-- `pet-schema` peer-dep pin already at `git+...@v2.4.0-rc1` (carried from P0-A; no change in this RC).
+- `pet-schema` peer-dep pin bumped from `git+...@v2.4.0-rc1` to `git+...@v2.4.0` for the final cut (P5-A-2).
 - `shared/.env.example`: replaced `WANDB_API_KEY` / `WANDB_PROJECT` with `CLEARML_API_HOST` / `CLEARML_API_ACCESS_KEY` / `CLEARML_API_SECRET_KEY` (P1-F).
 - `docs/DEVELOPMENT_GUIDE.md`: 14 wandb references replaced with ClearML equivalents; W&B removal notice added (P1-F).
 - `docs/onboarding.md`, `docs/runbook.md`: W&B onboarding/runbook entries replaced with ClearML equivalents (P1-F).

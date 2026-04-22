@@ -5,7 +5,7 @@
 - Python 3.11.x (use conda env `pet-pipeline`)
 - git
 - make
-- docker compose (optional, for Label Studio / W&B local)
+- docker compose (optional, for Label Studio local)
 
 ## Quick Start
 
@@ -19,7 +19,7 @@ bash scripts/setup_dev.sh
 
 # 3. Configure secrets
 cp .env.example .env
-# Edit .env — set WANDB_API_KEY, LABEL_STUDIO_TOKEN, DB_URL, etc.
+# Edit .env — set CLEARML_API_HOST/ACCESS_KEY/SECRET_KEY, LABEL_STUDIO_TOKEN, DB_URL, etc.
 
 # 4. Verify
 conda run -n pet-pipeline make test

@@ -9,14 +9,11 @@ Acceptance criteria:
 from __future__ import annotations
 
 import hashlib
-import json
 import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-import yaml
 from pet_schema.model_card import ModelCard
 
 # Use the same Python env as the test suite for the `pet` binary.

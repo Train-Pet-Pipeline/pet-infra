@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from pet_infra.base import BaseStorage
 from pet_infra.registry import STORAGE
 
+
 # Both names are first-class. ``local://`` is the canonical write scheme;
 # ``file://`` is accepted everywhere so P1-C resolved_config_uri round-trips.
 @STORAGE.register_module(name="file")

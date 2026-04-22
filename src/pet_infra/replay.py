@@ -11,14 +11,12 @@ Environment variables:
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import subprocess
 import tempfile
 from pathlib import Path
 
-import yaml
 from pet_schema.model_card import ModelCard
 
 from pet_infra._register import register_all

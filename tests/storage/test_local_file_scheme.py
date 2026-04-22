@@ -6,8 +6,6 @@ schemes so ``STORAGE.build({"type": "file"})`` returns a working LocalStorage.
 """
 from __future__ import annotations
 
-import pytest
-
 # Import triggers registration side-effect for both names
 import pet_infra.storage.local  # noqa: F401
 from pet_infra.registry import STORAGE

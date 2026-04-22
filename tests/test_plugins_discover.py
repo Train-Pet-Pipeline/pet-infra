@@ -36,7 +36,7 @@ def clean_registries():
     4. After the test, restore all registries to their pre-eviction snapshots.
        Evict leaf modules again so the next discover test starts clean.
 
-    This covers all 6 registries: TRAINERS, EVALUATORS, CONVERTERS, METRICS,
+    This covers all 7 registries: TRAINERS, EVALUATORS, CONVERTERS, METRICS,
     DATASETS, STORAGE, OTA. Previously only STORAGE was evicted, which caused
     test_discover_first_party_registries_contain_only_pet_infra_plugins to fail
     in any shared env with pet-train/pet-eval/pet-quantize/pet-ota installed.
@@ -74,8 +74,8 @@ class TestDiscoverPlugins:
     def _use_clean(self, clean_registries):  # noqa: PT004
         """Auto-apply clean_registries to every test in this class."""
 
-    def test_discover_returns_six_keys(self):
-        """discover_plugins() returns a dict with exactly 6 canonical keys."""
+    def test_discover_returns_seven_keys(self):
+        """discover_plugins() returns a dict with exactly 7 canonical keys."""
         from pet_infra.plugins.discover import discover_plugins
 
         result = discover_plugins()
@@ -86,6 +86,7 @@ class TestDiscoverPlugins:
             "metrics",
             "datasets",
             "storage",
+            "ota",
         }
 
     def test_discover_storage_contains_local(self):
@@ -127,6 +128,7 @@ class TestDiscoverPlugins:
             "metrics",
             "datasets",
             "storage",
+            "ota",
         }
         assert "local" in result["storage"]
 
@@ -164,5 +166,5 @@ class TestDiscoverPlugins:
         result = discover_mod.discover_plugins(required=["alpha"])
         assert called == ["alpha"]  # only alpha's loader ran
         assert set(result.keys()) == {
-            "trainers", "evaluators", "converters", "metrics", "datasets", "storage",
+            "trainers", "evaluators", "converters", "metrics", "datasets", "storage", "ota",
         }

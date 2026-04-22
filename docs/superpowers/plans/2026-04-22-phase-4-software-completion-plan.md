@@ -4,7 +4,30 @@
 
 **Goal:** Close the software loop of the Train-Pet-Pipeline by shipping OTA S3/HTTP backend plugins, rule-based cross-modal fusion evaluators, multi-axis recipe variations launcher, deterministic `pet run --replay`, complete W&B physical removal, BSL 1.1 license adoption, and matrix 2026.09 freeze — all in a hardware-free environment.
 
-**Architecture:** 7 workstreams (W1 OTA backends / W2 fusion plugins / W3 variations launcher / W4 replay determinism / W5 W&B removal / W6 matrix-2026.09 freeze / W7 BSL 1.1) shipped through 38 PRs across 7 sub-phases (P0 / P1 / P2-A / P2-B / P2-C / P5-A / W7 / P6). Subagent-driven-development with auto-merge + Phase-level checkpoint + `gh pr merge --auto --squash`. Every PR follows TDD; every plugin uses mmengine.Registry contract; every cross-repo bump preserves the 4-step (or 6-step where applicable) peer-dep CI install order.
+**Architecture:** 7 workstreams (W1 OTA backends / W2 fusion plugins / W3 variations launcher / W4 replay determinism / W5 W&B removal / W6 matrix-2026.09 freeze / W7 BSL 1.1) shipped through **38 PRs** across 8 sub-phases (P0 / P1 / P2-A / P2-B / P2-C / P5-A / W7 / P6). Subagent-driven-development with auto-merge + Phase-level checkpoint + `gh pr merge --auto --squash`. Every PR follows TDD; every plugin uses mmengine.Registry contract; every cross-repo bump preserves the 4-step (or 6-step where applicable) peer-dep CI install order.
+
+**Authoritative pet-schema field reference (verified by reading `pet-schema/src/pet_schema/model_card.py` 2026-04-22):**
+
+```python
+class EdgeArtifact(BaseModel):
+    format: Literal["rkllm", "rknn", "onnx", "gguf"]
+    target_hardware: list[str]
+    artifact_uri: str          # NOT "path"; this is a URI fetched via STORAGE registry
+    sha256: str
+    size_bytes: int
+    min_firmware: str | None = None
+    input_shape: dict[str, list[int]]
+
+class DeploymentStatus(BaseModel):
+    backend: str                # free-form string — "s3"/"http"/"local" all accepted
+    state: Literal["pending", "deployed", "rolled_back", "failed"]   # field name is "state", NOT "status"
+    deployed_at: datetime
+    manifest_uri: str | None = None    # NOT "target"
+    error: str | None = None
+    notes: str | None = None
+```
+
+**All EdgeArtifact / DeploymentStatus references in this plan use these exact field names.** Any divergence in test fixtures or plugin code is a bug — do not infer or rename.
 
 **Tech Stack:** Python 3.11.x · Pydantic v2 · mmengine.Registry · Hydra defaults-list + multirun · ProcessPoolExecutor · LocalStack (S3) + http.server (HTTP) for backend tests · click CLI · ClearML · DVC · ruff + mypy + pytest · BSL 1.1 license.
 
@@ -658,7 +681,66 @@ def test_clearml_tag_injected(tmp_path, monkeypatch):
     )
     for v in summary["variations"]:
         assert any(t.startswith("variation:") for t in v["clearml_tags"])
+
+
+# Spec §1.3 fail-fast conditions — every one MUST be tested + implemented:
+
+def test_link_to_length_mismatch_fails(tmp_path, monkeypatch):
+    """Spec §1.3: link_to with different value-list lengths → ValueError."""
+    monkeypatch.setenv("PET_MULTIRUN_SYNC", "1")
+    with pytest.raises(ValueError, match="link_to.*length"):
+        launch_multirun(
+            recipe_path="tests/fixtures/recipe_link_to_mismatch.yaml",  # A=[1,2,3] B link_to=A B=[a,b]
+            output_dir=tmp_path,
+        )
+
+
+def test_link_to_unknown_axis_fails(tmp_path, monkeypatch):
+    """Spec §1.3: link_to pointing at non-existent axis → ValueError."""
+    monkeypatch.setenv("PET_MULTIRUN_SYNC", "1")
+    with pytest.raises(ValueError, match="link_to.*unknown"):
+        launch_multirun(
+            recipe_path="tests/fixtures/recipe_link_to_unknown.yaml",  # B link_to=Z (no axis Z)
+            output_dir=tmp_path,
+        )
+
+
+def test_variations_with_cli_multirun_fails(tmp_path, monkeypatch):
+    """Spec §1.3: recipe.variations + CLI -m simultaneously → fail-fast."""
+    monkeypatch.setenv("PET_MULTIRUN_SYNC", "1")
+    with pytest.raises(ValueError, match="variations.*-m|multirun.*conflict"):
+        launch_multirun(
+            recipe_path="tests/fixtures/recipe_with_variations.yaml",
+            overrides=["-m", "+ablation.lr=[1e-4,1e-3]"],
+            output_dir=tmp_path,
+        )
+
+
+def test_variations_with_hydra_sweeper_params_fails(tmp_path, monkeypatch):
+    """Spec §1.3: recipe.variations + YAML hydra.sweeper.params simultaneously → fail-fast."""
+    monkeypatch.setenv("PET_MULTIRUN_SYNC", "1")
+    with pytest.raises(ValueError, match="variations.*hydra.sweeper|sweeper.*conflict"):
+        launch_multirun(
+            recipe_path="tests/fixtures/recipe_variations_and_sweeper.yaml",
+            output_dir=tmp_path,
+        )
+
+
+def test_variation_stage_unknown_fails(tmp_path, monkeypatch):
+    """Spec §3.5 implicit: AblationAxis.stage must be in recipe.stages set."""
+    monkeypatch.setenv("PET_MULTIRUN_SYNC", "1")
+    with pytest.raises(ValueError, match="stage.*unknown|stage.*not in"):
+        launch_multirun(
+            recipe_path="tests/fixtures/recipe_axis_stage_unknown.yaml",
+            output_dir=tmp_path,
+        )
 ```
+
+Add the matching fixtures under `tests/fixtures/`:
+- `recipe_link_to_mismatch.yaml` — axis A=[1,2,3], axis B has `link_to: A` and values=[a,b]
+- `recipe_link_to_unknown.yaml` — axis B has `link_to: Z` where no axis Z exists
+- `recipe_variations_and_sweeper.yaml` — has both `variations:` block and `hydra.sweeper.params:` set
+- `recipe_axis_stage_unknown.yaml` — axis with `stage: nonexistent_stage`
 
 Create `tests/launcher/test_preflight.py`:
 
@@ -723,10 +805,15 @@ def check_cartesian_size(n: int) -> None:
 
 Modify `launch_multirun`:
 1. Load `ExperimentRecipe` from `recipe_path`.
-2. Build cartesian product over `recipe.variations`, honoring `link_to` (co-iterated axes share a single index).
-3. Compute total `n` and call `check_cartesian_size(n)` before scheduling.
-4. For each variation, derive `variation_id = sha1(json.dumps(axis_values))[:8]` and inject ClearML tag `f"variation:{variation_id}"` (read existing tag list from `recipe.clearml_tags`, append).
-5. Pass per-variation overrides to `_run_single`.
+2. **Fail-fast guards** (run **before** any execution; per spec §1.3):
+   - If `recipe.variations` is non-empty AND `overrides` contains `-m` (or any element starts with `+ablation.`): raise `ValueError("recipe.variations conflicts with CLI -m / +ablation; choose one")`.
+   - If `recipe.variations` is non-empty AND the loaded YAML has `hydra.sweeper.params` set: raise `ValueError("recipe.variations conflicts with YAML hydra.sweeper.params; choose one")`.
+   - For each axis with `link_to`: assert the target axis exists (else `ValueError("link_to: unknown axis '<name>'")`); assert `len(values) == len(target.values)` (else `ValueError("link_to: length mismatch ...")`).
+   - For each axis: assert `axis.stage` is in `recipe.stages` set (else `ValueError("axis.stage 'X' unknown; not in recipe.stages")`). If recipe has no explicit stages set, skip this check.
+3. Build cartesian product over `recipe.variations`, honoring `link_to` (co-iterated axes share a single index → `zip` not `product`).
+4. Compute total `n` and call `check_cartesian_size(n)` before scheduling.
+5. For each variation, derive `variation_id = sha1(json.dumps(axis_values, sort_keys=True))[:8]` and inject ClearML tag `f"variation:{axis_name}={value}"` per axis (multi-axis → multiple tags; per spec §1.3 line 149).
+6. Pass per-variation overrides to `_run_single`.
 
 - [ ] **Step 5: Update `cli.py:_check_multirun_launcher`** to call `check_cartesian_size` for all multirun paths (including `+ablation.<axis>=[…]` overrides without recipe.variations).
 
@@ -784,7 +871,29 @@ def test_replay_missing_resolved_config_errors(tmp_path, model_card_no_resolved)
     result = runner.invoke(cli, ["run", "--replay", model_card_no_resolved.id])
     assert result.exit_code != 0
     assert "resolved_config_uri" in result.output
+
+
+# Spec §1.4 lines 173-174 — required by §7.3 DoD test "resolved_config sha 匹配":
+
+def test_replay_sha256_mismatch_fails(tmp_path, model_card_with_corrupted_config):
+    """Spec §1.4: sha256(bytes) MUST equal card.hydra_config_sha; mismatch → fail."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["run", "--replay", model_card_with_corrupted_config.id, "--dry-run"])
+    assert result.exit_code != 0
+    assert "sha256" in result.output.lower() or "hydra_config_sha" in result.output
+
+
+def test_replay_git_shas_drift_warns_only(tmp_path, model_card_git_drift, capsys):
+    """Spec §1.4: git_shas drift is warn-only, NOT fail."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["run", "--replay", model_card_git_drift.id, "--dry-run"])
+    assert result.exit_code == 0
+    assert "warn" in result.output.lower() or "drift" in result.output.lower()
 ```
+
+Add fixtures in `tests/cli/conftest.py`:
+- `model_card_with_corrupted_config` — writes a resolved_config whose sha256 != card.hydra_config_sha
+- `model_card_git_drift` — card.git_shas differs from current HEAD (monkeypatch the HEAD-resolution helper)
 
 Add `model_card_with_resolved_uri` / `model_card_no_resolved` fixtures in `tests/cli/conftest.py` (write a ModelCard JSON to a fake registry dir; monkeypatch `pet_infra.replay._load_card` to read from that dir).
 
@@ -812,18 +921,62 @@ def _load_card(card_id: str) -> ModelCard:
     return ModelCard.model_validate_json((root / f"{card_id}.json").read_text())
 
 
-def fetch_resolved_config(card: ModelCard) -> str:
+def fetch_resolved_config(card: ModelCard) -> bytes:
     if not card.resolved_config_uri:
-        raise ValueError(f"ModelCard {card.id} has no resolved_config_uri (pre-Phase-4 run, cannot replay deterministically)")
+        raise ValueError(
+            f"ModelCard {card.id} has no resolved_config_uri "
+            "(pre-Phase-4 run, cannot replay deterministically)"
+        )
     scheme = urlparse(card.resolved_config_uri).scheme or "file"
     storage = STORAGE.build({"type": scheme})
-    return storage.read(card.resolved_config_uri).decode("utf-8")
+    return storage.read(card.resolved_config_uri)
+
+
+def _current_git_shas() -> dict[str, str]:
+    """Return {repo_name: HEAD sha} for repos in the current pipeline tree."""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[3]  # …/Train-Pet-Pipeline/
+    result: dict[str, str] = {}
+    for repo in ("pet-schema", "pet-infra", "pet-data", "pet-train", "pet-eval"):
+        p = root / repo
+        if not (p / ".git").exists():
+            continue
+        try:
+            sha = subprocess.check_output(["git", "-C", str(p), "rev-parse", "HEAD"]).decode().strip()
+            result[repo] = sha
+        except subprocess.CalledProcessError:
+            continue
+    return result
 
 
 def replay(card_id: str, *, dry_run: bool = False) -> dict:
+    import hashlib, sys
     card = _load_card(card_id)
-    resolved_yaml = fetch_resolved_config(card)
-    return {"card_id": card.id, "resolved_config": resolved_yaml, "dry_run": dry_run}
+    raw = fetch_resolved_config(card)
+
+    # Spec §1.4 line 173 — sha256 fail-fast (REQUIRED, not advisory):
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if actual_sha != card.hydra_config_sha:
+        raise ValueError(
+            f"resolved_config sha256 mismatch: expected {card.hydra_config_sha}, "
+            f"got {actual_sha} (config corrupted, swapped, or storage tampering)"
+        )
+
+    # Spec §1.4 line 174 — git_shas drift WARN-ONLY (do not block):
+    current = _current_git_shas()
+    drifted = {r: (card.git_shas.get(r), current.get(r))
+               for r in set(card.git_shas) | set(current)
+               if card.git_shas.get(r) != current.get(r)}
+    if drifted:
+        print(f"WARN: git_shas drift detected vs ModelCard.git_shas: {drifted}", file=sys.stderr)
+
+    return {
+        "card_id": card.id,
+        "resolved_config": raw.decode("utf-8"),
+        "dry_run": dry_run,
+        "git_drift": drifted,
+    }
 ```
 
 - [ ] **Step 4: Wire `--replay` into CLI**
@@ -864,13 +1017,23 @@ gh pr merge --auto --squash
 
 **Branch:** `feature/phase-4-wandb-removal-infra` → `dev`
 **Repo:** `pet-infra` (independent; can run parallel with P1-A..P1-E)
-**Files:**
+**Files (per spec §1.5 enumeration):**
 - Modify: `docker-compose.yml` (remove wandb service + wandb-data volume, lines ~25-40)
-- Modify: `Makefile` (remove any `wandb-up` / `wandb-down` targets)
-- Modify: `docs/DEVELOPMENT_GUIDE.md` (remove all W&B prose, replace pointer to ClearML)
+- Modify: `Makefile` (remove any `wandb-up` / `wandb-down` / `wandb` clean-target references)
+- Modify: `shared/.env.example` (remove all `WANDB_*` env vars per spec §1.5 line 185)
+- Modify: `docs/DEVELOPMENT_GUIDE.md` (remove all W&B prose; add ClearML pointer)
+- Modify: `docs/runbook.md` if present (W&B segments per spec §1.5 line 187)
+- Modify: `docs/onboarding.md` if present (W&B segments per spec §1.5 line 187)
 - Modify: `.gitignore` (remove `wandb/` entries)
-- Create: `.github/workflows/no-wandb-residue.yml` (or extend existing CI: `! grep -rE '^[^#]*wandb' --include='*.{py,yaml,yml,toml,sh,md}' .` returns 0 matches)
-- Modify: `.pre-commit-config.yaml` (add same grep as a hook)
+- Create: `.github/workflows/no-wandb-residue.yml`
+- Modify: `.pre-commit-config.yaml` (add same grep as hook)
+
+**Excluded from removal (per spec §1.5 lines 189-194 — historical archives stay frozen):**
+- `docs/superpowers/specs/2026-04-15-*.md`
+- `docs/superpowers/plans/2026-04-15-*.md`
+- `docs/phase-3a-audit.md` / `docs/phase-3b-audit.md`
+- `docs/retrospectives/2026-04-21-phase-3a.md`
+- The CI workflow `no-wandb-residue.yml` MUST exclude these paths.
 
 - [ ] **Step 1: Branch + remove wandb service**
 
@@ -893,16 +1056,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Scan for wandb references
+      - name: Scan for wandb references in live first-party code
         run: |
           set -e
-          MATCHES=$(grep -rEn --include='*.py' --include='*.yaml' --include='*.yml' \
-                              --include='*.toml' --include='*.sh' --include='*.md' \
-                              --exclude-dir=.git --exclude-dir=node_modules \
-                              --exclude='no-wandb-residue.yml' \
-                              -e '\bwandb\b' . || true)
+          # Spec §1.5 lines 189-194: historical archives are frozen, must be excluded.
+          MATCHES=$(grep -rEn \
+            --include='*.py' --include='*.yaml' --include='*.yml' \
+            --include='*.toml' --include='*.sh' --include='*.md' \
+            --exclude-dir=.git --exclude-dir=node_modules \
+            --exclude='no-wandb-residue.yml' \
+            --exclude='2026-04-15-*' \
+            --exclude='phase-3a-audit.md' --exclude='phase-3b-audit.md' \
+            --exclude='2026-04-21-phase-3a.md' \
+            -e '\bwandb\b' . || true)
           if [ -n "$MATCHES" ]; then
-            echo "::error::W&B residue found:"
+            echo "::error::W&B residue found in live code:"
             echo "$MATCHES"
             exit 1
           fi
@@ -1108,27 +1276,37 @@ from pet_ota.plugins.backends.s3 import S3BackendPlugin
 
 
 @pytest.fixture
-def passing_card(tmp_path):
-    art = tmp_path / "edge.rknn"
-    art.write_bytes(b"BINARY")
+def passing_card(s3_bucket):
+    """Card whose edge artifact lives at a real s3:// URI (round-trip across STORAGE registry)."""
+    from pet_infra.storage.s3 import S3Storage
+    src_uri = f"s3://{s3_bucket['bucket']}/source/edge.rknn"
+    S3Storage(endpoint_url=s3_bucket["endpoint_url"]).write(src_uri, b"BINARY")
     return ModelCard(
         id="card-1", version="0.1.0", modality="vlm", task="caption", arch="qwen",
         training_recipe="sft", hydra_config_sha="abc", git_shas={}, dataset_versions={},
         checkpoint_uri="s3://x/ckpt", metrics={"acc": 0.9}, gate_status="passed",
         trained_at=datetime.now(timezone.utc), trained_by="ci",
-        edge_artifacts=[EdgeArtifact(name="edge.rknn", path=str(art), sha256="d", size_bytes=6, format="rknn")],
+        edge_artifacts=[EdgeArtifact(
+            format="rknn",
+            target_hardware=["RK3576"],
+            artifact_uri=src_uri,
+            sha256="d4c9d9027326271a89ce51fcaf328ed673f17be33469ff979e8ab8dd501e664f",
+            size_bytes=6,
+            input_shape={"image": [1, 3, 224, 224]},
+        )],
     )
 
 
 def test_s3_backend_uploads_artifacts(passing_card, s3_bucket, minimal_recipe):
     plugin = S3BackendPlugin(bucket=s3_bucket["bucket"], prefix="ota/", endpoint_url=s3_bucket["endpoint_url"])
     out_card = plugin.run(passing_card, minimal_recipe)
-    assert out_card.deployment_history[-1].backend == "s3"
-    assert out_card.deployment_history[-1].status == "deployed"
-    # manifest exists
+    last = out_card.deployment_history[-1]
+    assert last.backend == "s3"
+    assert last.state == "deployed"   # field is "state", per pet-schema DeploymentStatus
+    assert last.manifest_uri == f"s3://{s3_bucket['bucket']}/ota/card-1/manifest.json"
     from pet_infra.storage.s3 import S3Storage
     s = S3Storage(endpoint_url=s3_bucket["endpoint_url"])
-    assert s.exists(f"s3://{s3_bucket['bucket']}/ota/card-1/manifest.json")
+    assert s.exists(last.manifest_uri)
 
 
 def test_s3_backend_rejects_unpassed_gate(passing_card, s3_bucket, minimal_recipe):
@@ -1151,12 +1329,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import PurePosixPath
+from urllib.parse import urlparse
 
 from pet_schema.model_card import DeploymentStatus, ModelCard
 from pet_schema.recipe import ExperimentRecipe
 
-from pet_infra.registry import OTA
+from pet_infra.registry import OTA, STORAGE
 from pet_infra.storage.s3 import S3Storage
 
 
@@ -1165,34 +1344,50 @@ class S3BackendPlugin:
     def __init__(self, bucket: str, prefix: str = "ota/", endpoint_url: str | None = None, **_: object):
         self._bucket = bucket
         self._prefix = prefix.rstrip("/") + "/"
-        self._storage = S3Storage(endpoint_url=endpoint_url)
+        self._dest = S3Storage(endpoint_url=endpoint_url)
 
     def _uri(self, key: str) -> str:
         return f"s3://{self._bucket}/{self._prefix}{key}"
 
+    def _read_artifact(self, artifact_uri: str) -> bytes:
+        """Resolve any STORAGE-registered scheme (file/local/s3/http) to bytes."""
+        scheme = urlparse(artifact_uri).scheme or "file"
+        return STORAGE.build({"type": scheme}).read(artifact_uri)
+
     def run(self, input_card: ModelCard, recipe: ExperimentRecipe) -> ModelCard:
         if input_card.gate_status != "passed":
-            raise ValueError(f"S3BackendPlugin requires gate_status=passed, got {input_card.gate_status!r}")
+            raise ValueError(
+                f"S3BackendPlugin requires gate_status=passed, got {input_card.gate_status!r}"
+            )
         manifest = {"card_id": input_card.id, "version": input_card.version, "edge_artifacts": []}
         for art in input_card.edge_artifacts:
-            data = Path(art.path).read_bytes()
-            uri = self._uri(f"{input_card.id}/{art.name}")
-            self._storage.write(uri, data)
-            manifest["edge_artifacts"].append({"name": art.name, "uri": uri, "sha256": art.sha256, "size_bytes": art.size_bytes})
+            data = self._read_artifact(art.artifact_uri)
+            filename = PurePosixPath(urlparse(art.artifact_uri).path).name
+            dest_uri = self._uri(f"{input_card.id}/{filename}")
+            self._dest.write(dest_uri, data)
+            manifest["edge_artifacts"].append({
+                "format": art.format,
+                "target_hardware": art.target_hardware,
+                "artifact_uri": dest_uri,
+                "sha256": art.sha256,
+                "size_bytes": art.size_bytes,
+            })
         manifest_uri = self._uri(f"{input_card.id}/manifest.json")
-        self._storage.write(manifest_uri, json.dumps(manifest, indent=2).encode())
+        self._dest.write(manifest_uri, json.dumps(manifest, indent=2).encode())
         return input_card.model_copy(update={
             "deployment_history": [
                 *input_card.deployment_history,
                 DeploymentStatus(
-                    backend="s3", target=self._uri(input_card.id),
-                    status="deployed", deployed_at=datetime.now(timezone.utc),
+                    backend="s3",
+                    state="deployed",
+                    deployed_at=datetime.now(timezone.utc),
+                    manifest_uri=manifest_uri,
                 ),
             ]
         })
 ```
 
-Note: `DeploymentStatus.backend` field — verify by reading `pet-schema/src/pet_schema/model_card.py`. If it does not allow free-form, update pet-schema first via a follow-up to P0-A. (Default assumption: `backend: str` accepts "s3" / "http" / "local".)
+Note: `DeploymentStatus.backend: str` is verified free-form in `pet-schema/src/pet_schema/model_card.py:87`; `state` (NOT `status`) is `Literal["pending","deployed","rolled_back","failed"]`; the URI field is `manifest_uri` (NOT `target`). No pet-schema follow-up required.
 
 - [ ] **Step 4: Run tests — verify PASS**.
 
@@ -1257,6 +1452,7 @@ def http_server(tmp_path):
 
 @pytest.fixture
 def passing_card(tmp_path):
+    """Card whose edge artifact lives at a file:// URI (read via STORAGE registry)."""
     art = tmp_path / "edge.rknn"
     art.write_bytes(b"BIN")
     return ModelCard(
@@ -1264,14 +1460,25 @@ def passing_card(tmp_path):
         training_recipe="sft", hydra_config_sha="abc", git_shas={}, dataset_versions={},
         checkpoint_uri="s3://x/ckpt", metrics={"acc": 0.9}, gate_status="passed",
         trained_at=datetime.now(timezone.utc), trained_by="ci",
-        edge_artifacts=[EdgeArtifact(name="edge.rknn", path=str(art), sha256="d", size_bytes=3, format="rknn")],
+        edge_artifacts=[EdgeArtifact(
+            format="rknn",
+            target_hardware=["RK3576"],
+            artifact_uri=f"file://{art}",
+            sha256="9b2c0e5e0f4f7a4b9bd4ac3d17b0c9c4f5e6a7b8c9d0e1f2a3b4c5d6e7f80910",
+            size_bytes=3,
+            input_shape={"image": [1, 3, 224, 224]},
+        )],
     )
 
 
 def test_http_backend_no_auth(http_server, passing_card, minimal_recipe):
     plugin = HttpBackendPlugin(base_url=http_server["base_url"])
-    plugin.run(passing_card, minimal_recipe)
+    out_card = plugin.run(passing_card, minimal_recipe)
     assert any(p == "/card-1/edge.rknn" for p, _ in http_server["handler"].received)
+    last = out_card.deployment_history[-1]
+    assert last.backend == "http"
+    assert last.state == "deployed"
+    assert last.manifest_uri == f"{http_server['base_url']}/card-1/manifest.json"
 
 
 def test_http_backend_bearer(http_server, passing_card, minimal_recipe):
@@ -1308,23 +1515,47 @@ class HttpBackendPlugin:
         if auth_token:
             self._headers["Authorization"] = f"Bearer {auth_token}"
 
+    def _read_artifact(self, artifact_uri: str) -> bytes:
+        from urllib.parse import urlparse
+        scheme = urlparse(artifact_uri).scheme or "file"
+        return STORAGE.build({"type": scheme}).read(artifact_uri)
+
     def run(self, input_card: ModelCard, recipe) -> ModelCard:
+        from pathlib import PurePosixPath
+        from urllib.parse import urlparse
         if input_card.gate_status != "passed":
-            raise ValueError(...)
+            raise ValueError(
+                f"HttpBackendPlugin requires gate_status=passed, got {input_card.gate_status!r}"
+            )
+        manifest = {"card_id": input_card.id, "version": input_card.version, "edge_artifacts": []}
         for art in input_card.edge_artifacts:
-            data = Path(art.path).read_bytes()
-            url = f"{self._base}/{input_card.id}/{art.name}"
+            data = self._read_artifact(art.artifact_uri)
+            filename = PurePosixPath(urlparse(art.artifact_uri).path).name
+            url = f"{self._base}/{input_card.id}/{filename}"
             r = requests.put(url, data=data, timeout=self._timeout, headers=self._headers, auth=self._auth)
             r.raise_for_status()
+            manifest["edge_artifacts"].append({
+                "format": art.format, "target_hardware": art.target_hardware,
+                "artifact_uri": url, "sha256": art.sha256, "size_bytes": art.size_bytes,
+            })
         manifest_url = f"{self._base}/{input_card.id}/manifest.json"
-        manifest = json.dumps({"card_id": input_card.id, "edge_artifacts": [a.model_dump() for a in input_card.edge_artifacts]}).encode()
-        requests.put(manifest_url, data=manifest, headers={**self._headers, "Content-Type": "application/json"}, auth=self._auth, timeout=self._timeout).raise_for_status()
+        requests.put(
+            manifest_url, data=json.dumps(manifest).encode(),
+            headers={**self._headers, "Content-Type": "application/json"},
+            auth=self._auth, timeout=self._timeout,
+        ).raise_for_status()
         return input_card.model_copy(update={"deployment_history": [
             *input_card.deployment_history,
-            DeploymentStatus(backend="http", target=self._base + f"/{input_card.id}", status="deployed",
-                             deployed_at=datetime.now(timezone.utc)),
+            DeploymentStatus(
+                backend="http",
+                state="deployed",
+                deployed_at=datetime.now(timezone.utc),
+                manifest_uri=manifest_url,
+            ),
         ]})
 ```
+
+(Add `from pet_infra.registry import OTA, STORAGE` at top.)
 
 - [ ] **Step 3: Run tests — verify PASS** (3 auth modes).
 
@@ -1758,6 +1989,7 @@ gh pr merge --auto --squash
 - Modify: `src/pet_eval/report/generate_report.py` (lines 6,7,28,41 — remove `wandb_config` param entirely)
 - Modify: `params.yaml:21` (remove `wandb:` block)
 - Modify: `.gitignore` (remove `wandb/` entry)
+- Modify: `Makefile` (remove `wandb/` from `clean` target per spec §1.5 line 186)
 - Modify: callers of `generate_report` if any pass `wandb_config=` (`grep -rn "wandb_config="`)
 
 - [ ] **Step 1: Branch + locate all callers**

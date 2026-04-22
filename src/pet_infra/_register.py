@@ -21,6 +21,9 @@ def register_all() -> None:
     if "s3" not in STORAGE.module_dict:
         from pet_infra.storage import s3  # noqa: F401
 
+    if "http" not in STORAGE.module_dict:
+        from pet_infra.storage import http  # noqa: F401
+
     if "pet_infra.noop_evaluator" not in EVALUATORS.module_dict:
         from pet_infra.evaluators import noop  # noqa: F401
 

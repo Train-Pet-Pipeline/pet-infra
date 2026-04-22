@@ -20,11 +20,13 @@ class TestListPlugins:
         assert "local" in result.output
 
     def test_json_output_valid_json(self) -> None:
-        """list-plugins --json exits 0 and emits valid JSON with all 6 registry keys."""
+        """list-plugins --json exits 0 and emits valid JSON with all 7 registry keys."""
         runner = CliRunner()
         result = runner.invoke(main, ["list-plugins", "--json"])
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
-        expected_keys = {"trainers", "evaluators", "converters", "metrics", "datasets", "storage"}
+        expected_keys = {
+            "trainers", "evaluators", "converters", "metrics", "datasets", "storage", "ota"
+        }
         assert expected_keys == set(data.keys())
         assert "local" in data["storage"]

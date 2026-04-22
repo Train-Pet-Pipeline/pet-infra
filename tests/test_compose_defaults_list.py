@@ -12,7 +12,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "compose"
 
 def test_single_base_defaults_merged():
     """Single defaults entry merges base fields into top-level recipe."""
-    recipe = compose_recipe(FIXTURES / "single_base.yaml")
+    recipe, _, _ = compose_recipe(FIXTURES / "single_base.yaml")
     assert recipe.recipe_id == "test_single"
     assert recipe.owner_repo == "test-owner"
     assert recipe.description == "base-a description"
@@ -20,7 +20,7 @@ def test_single_base_defaults_merged():
 
 def test_nested_defaults_later_wins():
     """Later defaults entries override earlier; top-level overrides all defaults."""
-    recipe = compose_recipe(FIXTURES / "nested.yaml")
+    recipe, _, _ = compose_recipe(FIXTURES / "nested.yaml")
     assert recipe.owner_repo == "overridden-owner"
     assert recipe.description == "overridden"  # top-level override wins
 

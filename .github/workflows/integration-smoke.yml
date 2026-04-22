@@ -17,6 +17,9 @@ jobs:
           git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y libsndfile1
+      - name: Install pet-schema peer dependency
+        run: pip install 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v3.0.0'
+
       - name: Install pet-infra + pet-train (matrix 2026.07 final pins)
         run: |
           pip install -e ".[dev]"
@@ -24,7 +27,7 @@ jobs:
       - name: Compose smoke_tiny (validates recipe structure + plugin resolution)
         run: |
           python -c "
-          from pet_infra.recipe.compose import compose_recipe
+          from pet_infra.compose import compose_recipe
           r, d, sha = compose_recipe('recipes/smoke_tiny.yaml')
           print(r.recipe_id, sha[:8])
           print('smoke_tiny composed OK')

@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import yaml
 from pet_schema.model_card import ModelCard
 
+from pet_infra.compose import compose_recipe
 from pet_infra.experiment_logger.factory import build_experiment_logger
 from pet_infra.recipe.card_id import precompute_card_id
-from pet_infra.recipe.compose import compose_recipe
 
 from .cache import StageCache
 from .dag import build_dag
@@ -73,7 +73,8 @@ def pet_run(
 
     for stage in dag.topological_order():
         # Load stage config from filesystem path (§ adaptation 4)
-        stage_config_dict = yaml.safe_load(Path(stage.config_path).read_text()) or {}
+        _raw = yaml.safe_load(Path(stage.config_path).read_text())
+        stage_config_dict = _raw if _raw is not None else {}
         stage_adapter = SimpleNamespace(config=stage_config_dict)
 
         config_sha = hash_stage_config(stage_adapter, prev_card)

@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from importlib.metadata import entry_points
 
-from pet_infra.registry import CONVERTERS, DATASETS, EVALUATORS, METRICS, STORAGE, TRAINERS
+from pet_infra.registry import CONVERTERS, DATASETS, EVALUATORS, METRICS, OTA, STORAGE, TRAINERS
 
 _PLUGIN_GROUP = "pet_infra.plugins"
 
@@ -15,6 +15,7 @@ _REGISTRY_MAP = {
     "metrics": METRICS,
     "datasets": DATASETS,
     "storage": STORAGE,
+    "ota": OTA,
 }
 
 
@@ -33,8 +34,8 @@ def discover_plugins(
             loading takes place.
 
     Returns:
-        A dict with six keys — ``trainers``, ``evaluators``, ``converters``,
-        ``metrics``, ``datasets``, ``storage`` — each mapping to a sorted list
+        A dict with seven keys — ``trainers``, ``evaluators``, ``converters``,
+        ``metrics``, ``datasets``, ``storage``, ``ota`` — each mapping to a sorted list
         of the names currently registered in that registry.
 
     Raises:

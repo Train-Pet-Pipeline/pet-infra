@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from pet_schema import ExperimentRecipe
 
-from pet_infra.registry import CONVERTERS, EVALUATORS, STORAGE, TRAINERS
+from pet_infra.registry import CONVERTERS, DATASETS, EVALUATORS, OTA, STORAGE, TRAINERS
 
 
 class PreflightError(RuntimeError):
@@ -16,6 +16,8 @@ _REGISTRY_BY_NAME = {
     "trainers": TRAINERS,
     "evaluators": EVALUATORS,
     "converters": CONVERTERS,
+    "datasets": DATASETS,
+    "ota": OTA,
 }
 
 

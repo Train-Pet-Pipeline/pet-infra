@@ -34,12 +34,12 @@ Phase 4 已于 2026-04-22 shipped：
    - `compatibility_matrix.yaml` 是快照表不是约束表，无 CI 强制验证
 
 2. **技术文档缺失**
-   - 7 个业务仓（pet-schema / pet-data / pet-annotation / pet-train / pet-eval / pet-quantize / pet-ota / pet-id）**均无** `docs/architecture.md`
-   - pet-infra 有 DEVELOPMENT_GUIDE 2745 行（规范源）+ retrospectives，但无系统级架构文档（OVERVIEW）
+   - 8 个仓（pet-schema / pet-data / pet-annotation / pet-train / pet-eval / pet-quantize / pet-ota / pet-id）**均无** `docs/architecture.md`
+   - pet-infra 有 DEVELOPMENT_GUIDE 2745 行（规范源）+ retrospectives，但无本仓 `architecture.md` 也无系统级 `OVERVIEW.md`
    - 新人接手任一仓的模块开发，需要靠"读代码 + 问人"，onboarding 摩擦大
 
 3. **Phase 3B 遗留技术债阻碍文档沉淀**
-   - pet-infra `compose.py` + `compose_legacy.py` 并存（Phase 4 retro §7 #6）
+   - pet-infra 存在两个 compose 模块：`src/pet_infra/compose.py`（97 行，defaults-list 解析）+ `src/pet_infra/recipe/compose.py`（59 行，recipe 组装，import 前者）；职责有重叠，写 architecture.md 时要么解释 "为什么两个 compose"（债务延续）要么合并 — 对应 Phase 4 retro §7 #6（原 retro 误写为 `compose_legacy.py`，实际是 `recipe/compose.py`）
    - pet-infra `orchestrator/hooks.py` 5 个 StageRunner 类高度相似未 DRY（§7 #7）
    - pet-train / pet-eval / pet-quantize 缺 `no-wandb-residue.yml` CI guard（§7 #8）
    - 这些不清理，architecture.md 要么记录债务延续、要么描述理想态骗人
@@ -377,15 +377,21 @@ writing-plans skill（细分每仓任务 + 依赖治理 plan）
 
 在 pet-infra pass 执行时拍板。两选项数据：
 
-- **选项 α（全硬 pin tag）**
-  - 当前状态：5 仓已硬 pin（pet-infra / data / annotation / quantize / ota），2 仓未 pin（pet-train / eval），1 仓不依赖（pet-id）
-  - 改动量：pet-train + pet-eval 改 pyproject.toml 两行；pet-schema bump 时所有 9 仓都要改
+**pet-schema 依赖现状（实测自 pyproject.toml）**：
+
+| 状态 | 仓数 | 仓列表 |
+|---|---|---|
+| 硬 pin tag（`pet-schema @ git+...@vX.Y.Z`）| 4 | pet-infra, pet-data, pet-annotation, pet-quantize |
+| 无 pin（`"pet-schema"`）| 2 | pet-train, pet-eval |
+| 完全不依赖 pet-schema | 2 | pet-ota, pet-id |
+
+- **选项 α（全硬 pin tag — 所有依赖 pet-schema 的仓统一硬 pin）**
+  - 改动量：pet-train + pet-eval 改 pyproject.toml 两行加 tag；pet-ota / pet-id 不涉及（不依赖）；pet-schema bump 时 6 个依赖仓都要改 pin
   - 清晰度：新人看 pyproject.toml 直接知道吃哪版
   - 一致性：与 peer-dep 模式**略不一致**（pet-infra peer-dep，pet-schema 硬 pin）
 
-- **选项 β（全 peer-dep 无 pin）**
-  - 当前状态：2 仓已无 pin（pet-train / eval），7 仓未做（含 pet-id 完全不依赖）
-  - 改动量：7 仓改 pyproject.toml（删 pet-schema 行）+ 每仓 `_register.py` 加 pet-schema guard；pet-schema bump 时仅改 matrix
+- **选项 β（全 peer-dep 无 pin — 所有依赖 pet-schema 的仓无 pin，靠 matrix 锁）**
+  - 改动量：4 仓（pet-infra/data/annotation/quantize）删 pyproject.toml pet-schema 行 + 每仓 `_register.py` 加 pet-schema fail-fast guard；pet-train/eval 已无 pin 无需动；pet-ota/id 不涉及；pet-schema bump 时仅改 matrix
   - 清晰度：需翻 matrix 才知道吃哪版（OVERVIEW §4 装序表补偿）
   - 一致性：与 peer-dep 模式**完全一致**
 

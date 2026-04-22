@@ -680,7 +680,7 @@ def _extra_validations(data: dict) -> list[str]:
 | 量化 KL 散度 | W8A8 vs FP16 | <0.02 |
 | ECE（Expected Calibration Error） | 校准误差，按置信区间分桶计算 | 仅观测，不门控 |
 
-> 注：calibration ECE 为信息性指标，记录到 wandb 但不参与门控判定（threshold=None）。
+> 注：calibration ECE 为信息性指标，记录到 ClearML 但不参与门控判定（threshold=None）。
 
 **音频 CNN 门控指标（初期宽松，后续根据数据调整）：**
 
@@ -1295,7 +1295,7 @@ pet-train/
 │   ├── base/
 │   │   ├── sft_base.yaml              # LLaMA-Factory SFT 基础配置
 │   │   └── dpo_base.yaml              # LLaMA-Factory DPO 基础配置
-│   ├── experiments/                   # 文件名 = 实验名 = wandb run_name
+│   ├── experiments/                   # 文件名 = 实验名 = ClearML task name
 │   │   ├── sft_lora_r16_lr2e4_ep3.yaml
 │   │   └── dpo_user_feedback_v1.yaml
 │   └── audio/
@@ -1337,8 +1337,8 @@ lora_target: q_proj,v_proj           # 只训 Q/V，不训 K
 freeze_vision_tower: true             # 必须，冻结视觉编码器
 template: qwen2_vl
 cutoff_len: 4096
-report_to: wandb
-# run_name 由 train_sft.sh 从配置文件名自动提取
+report_to: clearml
+# task_name 由 train_sft.sh 从配置文件名自动提取
 ```
 
 **KL 蒸馏（可选，通过 params.yaml 启用）：**
@@ -1360,7 +1360,7 @@ compute_topk_kl_loss(student_logits, teacher_token_ids, teacher_logprobs, temper
 **消融实验命名规范（强制）：**
 - 格式：`{任务}_{变量名}_{值}.yaml`
 - 示例：`sft_lora_r16_lr2e4_ep3.yaml` vs `sft_lora_r8_lr2e4_ep3.yaml`
-- `train_sft.sh` 自动从文件名提取 `run_name` 注入 wandb，不允许人工覆盖
+- `train_sft.sh` 自动从文件名提取 `task_name` 注入 ClearML，不允许人工覆盖
 
 ---
 
@@ -1401,7 +1401,7 @@ pet-eval/
 │   │   └── eval_audio.py              # 音频 CNN 评估
 │   └── report/
 │       ├── __init__.py
-│       └── generate_report.py         # 结果写入 wandb（tenacity 重试）
+│       └── generate_report.py         # 结果写入 ClearML（tenacity 重试）
 ├── tasks/
 │   └── pet_feeder.py                  # lm-evaluation-harness 自定义 task（可选）
 ├── benchmark/
@@ -1442,9 +1442,9 @@ benchmark:
   anomaly_set_path: "benchmark/anomaly_set_v1.jsonl"
   audio_test_dir: ""
 
-wandb:
+clearml:
   project: "pet-eval"
-  entity: ""
+  task_type: "testing"
 
 inference:
   schema_version: "1.0"
@@ -1661,7 +1661,7 @@ pet-infra/
 │   │   └── Dockerfile             # 开发环境镜像
 │   ├── labelstudio/
 │   │   └── docker-compose.yml
-│   └── wandb/
+│   └── clearml/
 │       └── docker-compose.yml
 ├── docker-compose.yml             # 一键启动完整开发环境
 ├── ci/
@@ -1932,12 +1932,12 @@ cd pet-infra
 cp .env.example .env
 # 编辑 .env，填写必要的 API key 和路径
 
-# 3. 启动开发环境（含 Label Studio、wandb server）
+# 3. 启动开发环境（含 Label Studio）
 docker compose up -d
 
 # 服务启动后（带健康检查，PostgreSQL 就绪后 Label Studio 才启动）：
 # Label Studio:  http://localhost:8080
-# wandb server:  http://localhost:8081
+# ClearML:       使用 CLEARML_API_HOST 指向的远端或 self-hosted 实例
 # vLLM (72B):    待定（取决于本地部署 vs 云端 API 决策）
 
 # 4. 初始化 Label Studio（首次使用时执行，自动创建用户/项目/API key）
@@ -1947,7 +1947,6 @@ bash scripts/init_labelstudio.sh
 **单独启动某个服务：**
 ```bash
 docker compose up -d labelstudio      # 只启动 Label Studio
-docker compose up -d wandb            # 只启动 wandb
 # docker compose up -d teacher        # 待定（vLLM 部署方案未确定）
 ```
 
@@ -2020,11 +2019,11 @@ cp configs/experiments/sft_lora_r16_lr2e4_ep3.yaml \
    configs/experiments/sft_lora_r8_lr2e4_ep3.yaml
 # 只改 lora_rank: 8
 
-# 2. 启动训练（wandb run_name 自动从文件名提取）
+# 2. 启动训练（ClearML task_name 自动从文件名提取）
 bash scripts/train_sft.sh configs/experiments/sft_lora_r8_lr2e4_ep3.yaml
 
 # 3. 训练完成后自动触发 pet-eval 评估
-# 在 wandb 查看指标，和 r16 基准对比
+# 在 ClearML Web UI 查看指标，和 r16 基准对比
 ```
 
 #### 工作流 D：端侧验证（需要物理设备）
@@ -2047,7 +2046,7 @@ make validate  # 内部调用 pytest validate/
 □ 阅读本文档全文（建议 2 小时）
 □ 克隆 pet-infra，成功运行 docker compose up -d
 □ 克隆 pet-schema，成功运行 make setup && make test
-□ 在 wandb server 创建账号，配置本地客户端
+□ 配置 ClearML 凭据（CLEARML_API_HOST / CLEARML_API_ACCESS_KEY / CLEARML_API_SECRET_KEY），在 ClearML Web UI 确认可访问
 □ 在 Label Studio 创建账号，了解 SFT/DPO 两种标注界面
 □ 在目标仓库的 README 里找到"你负责的模块"
 □ 阅读 pet-infra/docs/runbook.md（常见故障处理）
@@ -2464,6 +2463,8 @@ python -c "import pet_infra; assert pet_infra.__version__.startswith(('2.',))"
 
 **pet-infra 自身 CI**（`plugin-discovery.yml` 等）：用 `pip install -e ".[dev]"` 装自身，无需上述四步。
 
+> **W&B 已于 Phase 4 P1-F（2026-04-22）按 spec §1.5 移除。ClearML 是唯一的实验追踪器。历史 W&B `init()` 调用点和 W&B Dashboard URL 均已废弃；请使用配置在 `CLEARML_API_HOST` 的 ClearML Web UI。**
+
 **ClearML 凭据注入（使用 ClearMLLogger 的 CI 或运行时）**：
 
 ```yaml
@@ -2629,7 +2630,7 @@ def register_all():
 | `transformers` | `>=4.44,<5.0` | 4.44 引入 Qwen2-VL 支持 |
 | `pydantic` | `>=2.0,<3.0` | v2 API 与 v1 不兼容 |
 | `label-studio` | docker image tag 固定 | 避免数据库 schema 变化 |
-| `wandb` | `>=0.16,<1.0` | 稳定 API |
+| `clearml` | `>=1.14,<2.0` | 稳定 API（Phase 4 P1-F 替换 W&B） |
 | `torch` | `==2.x.y`（固定 patch） | CUDA 兼容性 |
 
 ### 12.5 快速参考：关键阈值

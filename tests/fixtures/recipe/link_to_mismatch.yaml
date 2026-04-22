@@ -1,0 +1,25 @@
+recipe_id: link-to-mismatch-test
+description: link_to with mismatched value-list lengths must fail-fast (3 vs 2)
+scope: single_repo
+schema_version: "2.0.0"
+stages:
+  - name: sft
+    component_registry: trainers
+    component_type: sft_lora
+    inputs: {}
+    config_path: configs/sft.yaml
+    depends_on: []
+variations:
+  - name: lora_r
+    stage: sft
+    hydra_path: trainer.lora_r
+    values: [4, 8, 16]
+  - name: lora_alpha
+    stage: sft
+    hydra_path: trainer.lora_alpha
+    values: [8, 16]
+    link_to: lora_r
+produces:
+  - sft_model
+default_storage: local
+required_plugins: []

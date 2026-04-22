@@ -129,11 +129,11 @@ class TestStorageScheme:
                 inputs={
                     "checkpoint": {
                         "ref_type": "dvc_path",
-                        "ref_value": "s3://mybucket/models/checkpoint.pt",
+                        "ref_value": "oss://mybucket/models/checkpoint.pt",
                     }
                 },
             )
-            with pytest.raises(PreflightError, match=r"storage scheme 's3' not registered"):
+            with pytest.raises(PreflightError, match=r"storage scheme 'oss' not registered"):
                 preflight(recipe)
         finally:
             TRAINERS._module_dict.pop("fake_trainer", None)

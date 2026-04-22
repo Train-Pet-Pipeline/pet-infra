@@ -18,7 +18,7 @@ predecessor_retrospective: docs/retrospectives/2026-04-21-phase-3b.md
 
 Phase 3B 已完成（2026-04-21 全 4 main CI green，matrix `2026.08` final）：
 - pet-quantize v2.0.0（4 CONVERTERS plugin） / pet-ota v2.0.0（LocalBackendPlugin）/ pet-eval v2.1.0（QuantizedVlmEvaluator） / pet-infra v2.4.0（Hydra defaults-list + multi-axis multirun）
-- 6 个 plugin registry 全部就位：TRAINERS / EVALUATORS / CONVERTERS / METRICS / DATASETS / STORAGE + OTA
+- 7 个 plugin registry 全部就位：TRAINERS / EVALUATORS / CONVERTERS / METRICS / DATASETS / STORAGE / OTA
 - Phase 3B retrospective §8 列了 4 项明确的 Phase 4 backlog，§9 列了 4 项 preview
 
 ### 0.2 Phase 4 范围（用户 2026-04-22 brainstorming 决策）
@@ -139,6 +139,12 @@ pet run recipe=cross_modal_fusion_eval -m evaluator=fusion_single_modal,fusion_a
 - 有 `link_to`：被链接 axes **zip 配对**（pairwise）；values 长度必须相等，否则 fail-fast `ValueError`
 - `recipe.variations` 与命令行 `-m` 同时存在 → fail-fast
 - `recipe.variations` 与 YAML 内 `hydra.sweeper.params` 同时存在 → fail-fast
+
+**Cartesian preflight（防爆炸 — 见 §6 R6）**：
+- `compile_variations()` 计算最终 run 数 `N = ∏ |axis_values|`（pairwise 折叠后）
+- `N > 16` → log warn `"large sweep: N runs"`，继续
+- `N > 64` → fail-fast `RuntimeError("sweep too large: N runs > 64; set PET_ALLOW_LARGE_SWEEP=1 to override")`
+- 环境变量 `PET_ALLOW_LARGE_SWEEP=1` → 跳过 N>64 fail（warn 仍输出）
 
 **ClearML 集成**：每 variation 自动注入 tag `variation:<axis_name>=<value>`（多 axis 多 tag），靠 ClearML built-in compare UI 聚合。
 
@@ -349,6 +355,7 @@ OTA.build(backend_type).deploy(card) →
 - `link_to` 指向不存在的 axis name → fail
 - `link_to` pairing 的 axes values 长度不等 → fail
 - `variation.stage` 不在 `recipe.stages` 任一 name → fail
+- compiled run 数 N > 64 且未设 `PET_ALLOW_LARGE_SWEEP=1` → fail（详 §1.3 cartesian preflight + §6 R6）
 
 ### 3.4 W4 --replay
 - card-id 在 ModelCard 索引找不到 → fail

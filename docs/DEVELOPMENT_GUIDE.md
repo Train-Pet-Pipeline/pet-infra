@@ -19,7 +19,8 @@
 9. [Phase 1 Foundation 运行时（pet-infra 2.0.0）](#9-phase-1-foundation-运行时pet-infra-200)
 10. [Phase 2 Data & Annotation 运行时（pet-data 1.1.0, pet-annotation 1.1.0）](#10-phase-2-data--annotation-运行时pet-data-110-pet-annotation-110)
 11. [依赖治理与 peer-dep 约定](#11-依赖治理与-peer-dep-约定)
-12. [附录：版本管理、风险、术语表](#12-附录)
+12. [Phase 4 软件闭环（pet-infra 2.5.0 / pet-eval 2.2.0 / pet-ota 2.1.0）](#12-phase-4-软件闭环pet-infra-250--pet-eval-220--pet-ota-210)
+13. [附录：版本管理、风险、术语表](#13-附录)
 
 ---
 
@@ -2568,9 +2569,89 @@ def register_all():
 
 ---
 
-## 12. 附录
+## 12. Phase 4 软件闭环（pet-infra 2.5.0 / pet-eval 2.2.0 / pet-ota 2.1.0）
 
-### 12.1 版本管理总表
+> Phase 4 的最终交付版本组合固化于 compatibility_matrix.yaml 的 `2026.09` 行。
+
+### §12.1 新增 storage 后端
+
+pet-infra 2.5.0 在 `pet_infra.storage` 下新增两个注册存储后端：
+
+- **`S3Storage`**（`@STORAGE.register_module(force=True)`）：boto3 驱动，支持 `s3://bucket/key` URI，使用 moto `mock_aws` 进行单元测试，无需真实 AWS 凭据。
+- **`HttpStorage`**（只读）：requests 驱动，支持 `http://` / `https://` URI，适用于公开或通过鉴权 Header 访问的静态制品。
+
+两者均实现 `BaseStorage` 抽象接口（`read` / `write` / `exists` / `delete`），`HttpStorage.write()` 抛 `NotImplementedError`（语义：只读后端）。
+
+### §12.2 新增 OTA 后端
+
+pet-ota 2.1.0 在 OTA registry 中新增两个后端插件：
+
+- **`S3BackendPlugin`**：boto3 + moto 测试，`s3://` scheme。
+- **`HttpBackendPlugin`**：requests 驱动，支持 `basic` / `bearer` / `none` 三种鉴权模式（`auth_type` 参数）。
+
+`_read_artifact()` 通过 STORAGE registry 按 URI scheme（`file` / `local` / `s3` / `http`）动态解析后端，无需硬编码 scheme 分支。
+
+### §12.3 新增 fusion evaluators
+
+pet-eval 2.2.0 在 `pet_eval.plugins.fusion` 下新增三个 rule-based 跨模态融合 evaluator：
+
+| 模块 | 类名 | 融合策略 |
+|---|---|---|
+| `single_modal` | `SingleModalFusionEvaluator` | 直接透传单路模态分数，不融合 |
+| `and_gate` | `AndGateFusionEvaluator` | 所有模态均超阈值才输出正例 |
+| `weighted` | `WeightedFusionEvaluator` | 各模态分数加权求和，权重来自 `params.yaml` |
+
+配套 recipe：`pet-eval/recipes/cross_modal_fusion_eval.yaml`（`ExperimentRecipe` fixture）。
+
+**learned fusion 暂不实现**（per `feedback_no_learned_fusion`）——当前业务无量产需求，未来视数据积累情况再议。
+
+### §12.4 ExperimentRecipe.variations launcher
+
+pet-infra 2.5.0 为 `ExperimentRecipe` 引入 cartesian sweep launcher：
+
+- **preflight 阈值**：16 个 variation 以下免确认；16–64 需 `PET_ALLOW_LARGE_SWEEP=1` 环境变量；超过 64 报错（需 override flag）。
+- **ClearML 标签**：每个子实验通过 `resolved_config_uri` 关联到 ExperimentCard，自动打 run tag（recipe name + variation index）。
+- **配置格式**：`variations:` key 在 YAML recipe 中以列表形式声明，launcher 做笛卡尔积展开。
+
+### §12.5 pet run --replay
+
+`pet run --replay <card-id>` 实现 Tier-2 resolved-config replay：
+
+1. 从 ExperimentCard（ClearML / 本地缓存）取出 `resolved_config_uri`。
+2. 按 URI scheme 通过 STORAGE registry 读取 resolved config（JSON/YAML）。
+3. 直接启动该 config，**不重新解析 `variations`**——保证 exact 同 hash 的重现性。
+4. 新建独立 ClearML run，标记为 `replay_of: <card-id>`。
+
+### §12.6 W&B 物理删除
+
+Phase 4 完成 W&B 的全面物理删除，**ClearML 是唯一 experiment tracker**：
+
+| 删除范围 | 涉及仓库 |
+|---|---|
+| `params.yaml` 中的 `wandb:` block | pet-infra, pet-eval, pet-train, pet-quantize |
+| `.gitignore` 中的 `wandb/` 行 | 同上 |
+| Makefile `clean` target 中的 `wandb/` | 同上 |
+| source code 中所有 `import wandb` / `wandb.init` 引用 | 同上 |
+
+`vendor/` 目录不涉及（第三方源码，按原样保留）。
+
+CI guard（`pet-infra/.github/workflows/`）在 lint 阶段检测 `import wandb` 残留并报错。
+
+### §12.7 BSL 1.1 LICENSE
+
+全 10 个仓库（pet-schema / pet-data / pet-annotation / pet-train / pet-eval / pet-quantize / pet-ota / pet-infra / pet-id / pet-demo）统一采用 Business Source License 1.1：
+
+- **Change Date**：2030-04-22（发布后 4 年）
+- **Change License**：Apache License 2.0
+- **Licensed Work**：Train-Pet-Pipeline（各仓库独立 LICENSE 文件）
+
+Change Date 届满后，LICENSE 自动转为 Apache 2.0，届时任何人可自由商用。
+
+---
+
+## 13. 附录
+
+### 13.1 版本管理总表
 
 | 组件 | 当前版本 | 存放位置 | 变更流程 |
 |---|---|---|---|
@@ -2582,7 +2663,7 @@ def register_all():
 | 黄金集 | v1 | pet-eval/benchmark/ | PR + eval 负责人 approve |
 | 设备端事件库 Schema | v1 | 设备固件（Alembic 迁移管理） | 固件发布 |
 
-### 12.2 已知限制与风险
+### 13.2 已知限制与风险
 
 | 风险 | 描述 | 缓解措施 |
 |---|---|---|
@@ -2594,7 +2675,7 @@ def register_all():
 | 多宠识别混淆 | 体型相近的猫咪 id_tag 可能混淆 | 依赖 id_confidence 字段，低置信度事件单独处理 |
 | 固件白名单被绕过 | 应用层 bug 尝试上传原始视频 | 固件层（不是应用层）拦截，需固件安全审计 |
 
-### 12.3 术语表
+### 13.3 术语表
 
 | 术语 | 含义 |
 |---|---|
@@ -2617,7 +2698,7 @@ def register_all():
 | 感知哈希 | pHash（Perceptual Hash），用于检测相似图像的去重算法 |
 | ECE | Expected Calibration Error，模型置信度校准误差 |
 
-### 12.4 外部依赖版本锁定表
+### 13.4 外部依赖版本锁定表
 
 在各仓库 `requirements.txt` 中需要固定以下关键依赖的主版本：
 
@@ -2633,7 +2714,7 @@ def register_all():
 | `clearml` | `>=1.14,<2.0` | 稳定 API（Phase 4 P1-F 替换 W&B） |
 | `torch` | `==2.x.y`（固定 patch） | CUDA 兼容性 |
 
-### 12.5 快速参考：关键阈值
+### 13.5 快速参考：关键阈值
 
 所有阈值的权威来源是各仓库的 `params.yaml`，此处仅作参考：
 
@@ -2655,7 +2736,7 @@ def register_all():
 
 ---
 
-*文档版本：2.0*  
+*文档版本：2.1*  
 *状态：正式发布*  
 *维护规则：变更需要 PR + 至少一位 repo admin 审批，不允许直接推送到 main*  
 *下次计划审查：产品首批出货后 30 天*

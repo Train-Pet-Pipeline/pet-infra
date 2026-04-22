@@ -72,3 +72,27 @@ releases:
     hydra_core: ">=1.3,<1.4"
     rknn_toolkit2: "==2.0.0"
     rkllm_toolkit: "==1.2.0"
+
+  - release: "2026.09"
+    released: 2026-04-22
+    phase: phase-4-software-completion
+    pet_schema: "2.4.0"
+    pet_infra: "2.5.0"
+    pet_data: "1.2.0"
+    pet_annotation: "2.0.0"
+    pet_train: "2.0.1"
+    pet_eval: "2.2.0"
+    pet_quantize: "2.0.1"
+    pet_ota: "2.1.0"
+    pet_id: "0.1.0"
+    pet_demo: "1.0.1"
+    clearml: ">=1.14,<2.0"
+    mmengine_lite: ">=0.10,<0.12"
+    hydra_core: ">=1.3,<1.4"
+    rknn_toolkit2: "==2.0.0"   # carry forward (no hardware change in Phase 4)
+    rkllm_toolkit: "==1.2.0"
+    notes: |
+      Phase 4 software-completion: OTA S3+HTTP backends, rule-based cross-modal
+      fusion evaluators, ExperimentRecipe.variations launcher, pet run --replay,
+      W&B physical removal (ClearML is sole experiment tracker), BSL 1.1 license.
+      Hardware paths unchanged (Phase 5 will re-introduce real-device validation).

@@ -6,7 +6,7 @@ from pet_schema import ExperimentRecipe
 
 import pet_infra.storage.local  # noqa: F401 — registers "local" in STORAGE
 from pet_infra.recipe.preflight import PreflightError, preflight
-from pet_infra.registry import EVALUATORS, TRAINERS
+from pet_infra.registry import DATASETS, EVALUATORS, OTA, TRAINERS
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -263,6 +263,72 @@ class TestUpstreamExistence:
         finally:
             TRAINERS._module_dict.pop("fake_trainer", None)
             EVALUATORS._module_dict.pop("fake_evaluator", None)
+
+
+# ---------------------------------------------------------------------------
+# Check 1c — datasets and ota registry coverage (finding #10)
+# ---------------------------------------------------------------------------
+
+
+class TestDatasetAndOtaRegistryCoverage:
+    """preflight() check 1: component_type must be validated for 'datasets' and 'ota'.
+
+    _REGISTRY_BY_NAME previously only contained trainers/evaluators/converters.
+    Recipes with component_registry='datasets' or 'ota' silently skipped the
+    plugin-existence check, crashing with a confusing LookupError mid-DAG-run.
+    """
+
+    def test_unregistered_dataset_plugin_raises(self) -> None:
+        """Unregistered component_type in 'datasets' raises PreflightError."""
+        recipe = _make_recipe(
+            component_registry="datasets",
+            component_type="__not_registered_dataset__",
+        )
+        with pytest.raises(
+            PreflightError, match=r"plugin '__not_registered_dataset__' not registered"
+        ):
+            preflight(recipe)
+
+    def test_unregistered_ota_plugin_raises(self) -> None:
+        """Unregistered component_type in 'ota' raises PreflightError."""
+        recipe = _make_recipe(
+            component_registry="ota",
+            component_type="__not_registered_ota__",
+        )
+        with pytest.raises(PreflightError, match=r"plugin '__not_registered_ota__' not registered"):
+            preflight(recipe)
+
+    def test_registered_dataset_plugin_passes(self) -> None:
+        """A registered dataset component_type does NOT raise."""
+
+        @DATASETS.register_module(name="fake_dataset")
+        class FakeDataset:
+            """Fake dataset for testing."""
+
+        try:
+            recipe = _make_recipe(
+                component_registry="datasets",
+                component_type="fake_dataset",
+            )
+            assert preflight(recipe) is None
+        finally:
+            DATASETS._module_dict.pop("fake_dataset", None)
+
+    def test_registered_ota_plugin_passes(self) -> None:
+        """A registered OTA component_type does NOT raise."""
+
+        @OTA.register_module(name="fake_ota")
+        class FakeOta:
+            """Fake OTA handler for testing."""
+
+        try:
+            recipe = _make_recipe(
+                component_registry="ota",
+                component_type="fake_ota",
+            )
+            assert preflight(recipe) is None
+        finally:
+            OTA._module_dict.pop("fake_ota", None)
 
 
 # ---------------------------------------------------------------------------

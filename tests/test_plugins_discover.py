@@ -11,7 +11,14 @@ ALL_REGISTRIES = [TRAINERS, EVALUATORS, CONVERTERS, METRICS, DATASETS, STORAGE]
 
 # Leaf modules that register themselves via @register_module on import.
 # Both the submodule and the package must be evicted so re-import re-executes decorators.
-_EVICT_MODULES = ["pet_infra.storage.local", "pet_infra.storage"]
+_EVICT_MODULES = [
+    "pet_infra.storage.local",
+    "pet_infra.storage.s3",
+    "pet_infra.storage",
+]
+# Storage backends that pet-infra ships first-party (must be popped + restored
+# in lockstep with _EVICT_MODULES so re-import re-runs @register_module).
+_FIRST_PARTY_STORAGE_KEYS = ["local", "s3"]
 
 
 @pytest.fixture()
@@ -33,8 +40,8 @@ def clean_registries():
     # Step 2: evict modules + remove their contributions from registries
     for mod in _EVICT_MODULES:
         sys.modules.pop(mod, None)
-    for reg in ALL_REGISTRIES:
-        reg._module_dict.pop("local", None)
+    for key in _FIRST_PARTY_STORAGE_KEYS:
+        STORAGE._module_dict.pop(key, None)
 
     yield
 

@@ -141,7 +141,7 @@ def _run_single(recipe_path: Path, overrides: dict[str, Any], out_dir: Path) -> 
     cfg_path = (out_dir / "resolved_config.yaml").resolve()
     # resolved_dict is OmegaConf.to_container(..., resolve=True); yaml.safe_dump on
     # it == OmegaConf.to_yaml(cfg, resolve=True) modulo formatting. P1-E SHA-verifies
-    # against the same canonical resolved-dict form (see recipe/compose.py).
+    # against the same canonical resolved-dict form (see pet_infra.compose.compose_recipe).
     cfg_path.write_text(yaml.safe_dump(resolved_dict, sort_keys=True))
     resolved_config_uri = f"file://{cfg_path}"
 

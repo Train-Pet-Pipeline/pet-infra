@@ -1943,6 +1943,28 @@ def test_fusion_recipe_has_all_three_strategies():
 
 - [ ] **Step 3: Implement recipe**
 
+Each fusion strategy needs different `__init__` args (single_modal: `modality`; and_gate: `threshold`; weighted: `weights`). Use a Hydra config group so the variation swaps the **whole** evaluator block, not just the `type` field:
+
+`recipes/evaluator/single_modal.yaml`:
+```yaml
+type: single_modal_fusion
+modality: audio
+```
+
+`recipes/evaluator/and_gate.yaml`:
+```yaml
+type: and_gate_fusion
+threshold: 0.5
+```
+
+`recipes/evaluator/weighted.yaml`:
+```yaml
+type: weighted_fusion
+weights:
+  audio: 0.5
+  vlm: 0.5
+```
+
 `recipes/cross_modal_fusion_eval.yaml`:
 
 ```yaml
@@ -1955,18 +1977,15 @@ clearml_tags:
   - phase-4
   - cross-modal-fusion
 defaults:
-  evaluator:
-    type: weighted_fusion
-    weights:
-      audio: 0.5
-      vlm: 0.5
-  threshold: 0.5
+  - evaluator: weighted          # Hydra defaults-list — picks recipes/evaluator/weighted.yaml
 variations:
   - name: fusion_strategy
     stage: eval
-    hydra_path: evaluator.type
-    values: [single_modal_fusion, and_gate_fusion, weighted_fusion]
+    hydra_path: evaluator         # NOT evaluator.type — swaps whole config group
+    values: [single_modal, and_gate, weighted]   # filenames under recipes/evaluator/
 ```
+
+> **Naming note (drift from spec §1.3):** spec uses `fusion_single_modal / fusion_and_gate / fusion_weighted` for evaluator type names; plan uses `single_modal_fusion / and_gate_fusion / weighted_fusion` (matches mmengine convention `<noun>_<role>`). Plan is internally consistent (registration + recipe + tests all aligned). Record in P6-A retrospective §4 drift table.
 
 - [ ] **Step 4: Run tests — verify PASS**.
 

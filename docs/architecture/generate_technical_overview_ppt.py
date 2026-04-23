@@ -208,21 +208,23 @@ def add_header_bar(slide, title, subtitle=None, *, accent=BLUE, section_num=None
 
 
 def add_footer(slide, repo=None, slide_num=None, total=None):
-    # Small footer text
+    # Bottom-footer bar. If repo passed, reserve leftmost ~2" for chip+name;
+    # otherwise main footer text starts at the normal left margin.
     y = SLIDE_H.emu - 440_000
-    add_text(slide, 460_000, y, 5_000_000, 300_000,
-             "Train-Pet-Pipeline · Technical Overview · matrix 2026.10-ecosystem-cleanup",
-             size=9, color=GRAY_500)
-    if slide_num and total:
-        add_text(slide, SLIDE_W.emu - 1_400_000, y, 900_000, 300_000,
-                 f"{slide_num} / {total}",
-                 size=9, color=GRAY_500, align=PP_ALIGN.RIGHT)
+    main_x = 460_000
     if repo:
-        # Repo accent chip, bottom-left
         color = REPO_COLORS.get(repo, BLUE)
-        add_rect(slide, 460_000, y - 60_000, 50_000, 220_000, fill=color)
-        add_text(slide, 540_000, y - 50_000, 2_000_000, 300_000,
-                 repo, size=10, color=color, bold=True, font=FONT_MONO)
+        # 5 EMU-wide accent stripe flush-left
+        add_rect(slide, 460_000, y - 30_000, 50_000, 260_000, fill=color)
+        # Repo name immediately right of stripe
+        add_text(slide, 570_000, y - 20_000, 1_800_000, 260_000,
+                 repo, size=10, color=color, bold=True, font=FONT_MONO,
+                 anchor=MSO_ANCHOR.MIDDLE)
+        # Main footer text starts past the chip area
+        main_x = 2_500_000
+    add_text(slide, main_x, y, SLIDE_W.emu - main_x - 500_000, 300_000,
+             "Train-Pet-Pipeline · Technical Overview · matrix 2026.10-ecosystem-cleanup",
+             size=9, color=GRAY_500, anchor=MSO_ANCHOR.MIDDLE)
 
 
 # ----------------------------------------------------------------------------
@@ -266,9 +268,9 @@ def slide_title():
     add_text(s, 820_000, 5_420_000, 10_000_000, 400_000,
              "Post-Phase-10 ecosystem optimization closeout · 2026-04-23",
              size=12, color=GRAY_500)
-    # Decorative corner mark
-    add_rect(s, SLIDE_W.emu - 1_600_000, 800_000, 800_000, 8_000, fill=BLUE)
-    add_rect(s, SLIDE_W.emu - 1_600_000, 900_000, 400_000, 4_000, fill=GRAY_500)
+    # Decorative corner mark — thicker accent lines to be visible on projection
+    add_rect(s, SLIDE_W.emu - 2_100_000, 800_000, 1_400_000, 30_000, fill=BLUE)
+    add_rect(s, SLIDE_W.emu - 2_100_000, 900_000, 700_000, 15_000, fill=GRAY_500)
 
 
 # ---- Slide 2: 项目概览 ----
@@ -315,16 +317,17 @@ def slide_pipeline_flow():
             arrow_y = row_y + box_h // 2 - 100_000
             add_arrow_right(s, arrow_x + 10_000, arrow_y, gap - 20_000, 200_000, color=GRAY_500)
 
-    # Side-branch: pet-infra runtime
+    # Side-branch: pet-infra runtime — placed below header divider (y≥1.55M)
     infra_color = REPO_COLORS["pet-infra"]
     infra_x = start_x + (box_w * 3 + gap * 3)
-    infra_y = row_y - 1_200_000
-    add_box(s, infra_x - box_w // 2, infra_y, box_w * 2 + gap, 750_000,
-            "pet-infra\n共享运行时 · 7 registries · orchestrator",
+    infra_y = 1_620_000
+    infra_h = 580_000
+    add_box(s, infra_x - box_w // 2, infra_y, box_w * 2 + gap, infra_h,
+            "pet-infra · 共享运行时 · 7 registries · orchestrator",
             fill=GRAY_100, border=infra_color, text_color=NAVY, size=12, bold=True)
-    # Connector down to the main chain (dashed-feel via thin line)
+    # Connector down to the main chain (thin infra-colored line)
     conn_x = infra_x + box_w // 2 + gap // 2 + 10_000
-    add_rect(s, conn_x, infra_y + 750_000, 8_000, row_y - infra_y - 750_000, fill=infra_color)
+    add_rect(s, conn_x, infra_y + infra_h, 8_000, row_y - infra_y - infra_h, fill=infra_color)
 
     # Side-branch: pet-id independent
     pid_color = REPO_COLORS["pet-id"]
@@ -347,7 +350,7 @@ def slide_pipeline_flow():
 def slide_version_matrix():
     s = new_slide()
     add_header_bar(s, "最终版本表",
-                   "compatibility_matrix.yaml · 2026.10-ecosystem-cleanup · 9 仓 tag 已推",
+                   "compatibility_matrix.yaml · 2026.10-ecosystem-cleanup · 9 仓全部 tag 已推到 main",
                    section_num="§ 0.2 · Versions")
 
     rows = [
@@ -403,7 +406,10 @@ def slide_version_matrix():
 
 # ---- Section divider helper ----
 
-def slide_section_divider(num, title, subtitle, page_range):
+def slide_section_divider(num, title, subtitle, page_range=None):
+    """page_range kept for back-compat but no longer rendered; slide numbers
+    have drifted since the pitch front-matter was added. Section tag is
+    sufficient wayfinding."""
     s = new_slide()
     # Dark hero panel
     add_rect(s, 0, 0, SLIDE_W, SLIDE_H, fill=NAVY)
@@ -418,18 +424,20 @@ def slide_section_divider(num, title, subtitle, page_range):
     # Subtitle
     add_text(s, 1_000_000, 3_750_000, 10_000_000, 500_000,
              subtitle, size=16, color=GRAY_300, italic=True)
-    # Page range
-    add_text(s, 1_000_000, 4_450_000, 10_000_000, 400_000,
-             page_range, size=12, color=BLUE, bold=True, font=FONT_MONO)
 
 
 # ---- Repo "position" diagram helper (highlight current node in the 9-chain) ----
 
 def draw_position_strip(s, y, current):
-    """Mini 9-box strip at given y, highlighting current repo."""
+    """Mini 9-box strip at given y, highlighting current repo.
+
+    pet-annotation is shown as `pet-annot` in this compact strip so the
+    longest name doesn't line-wrap and break row rhythm. Display only —
+    the underlying repo identity remains `pet-annotation`.
+    """
     chain = ["pet-schema", "pet-data", "pet-annotation", "pet-train",
              "pet-eval", "pet-quantize", "pet-ota"]
-    # pet-id shown as a floating chip; pet-infra as a band below
+    display = {"pet-annotation": "pet-annot"}
     box_w = 950_000
     box_h = 360_000
     gap = 60_000
@@ -444,7 +452,7 @@ def draw_position_strip(s, y, current):
         tcol = WHITE if is_current else GRAY_500
         add_rect(s, x, y, box_w, box_h,
                  fill=fill, line=border, line_w=1.2 if is_current else 0.6)
-        add_text(s, x, y, box_w, box_h, name,
+        add_text(s, x, y, box_w, box_h, display.get(name, name),
                  size=10, color=tcol, bold=is_current,
                  font=FONT_MONO, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
         if i < len(chain) - 1:
@@ -600,7 +608,7 @@ def slide_problem():
     add_text(s, 820_000, 700_000, 10_000_000, 400_000,
              "THE PROBLEM", size=12, color=BLUE, bold=True)
     # Hero statement
-    add_text(s, 820_000, 1_150_000, 11_500_000, 1_500_000,
+    add_text(s, 820_000, 1_150_000, 10_500_000, 1_500_000,
              "养宠家庭最大的智能化缺口：\n摄像头能看见，却看不懂。",
              size=34, color=NAVY, bold=True, line_spacing=1.25)
 
@@ -625,8 +633,8 @@ def slide_problem():
             "color": BLUE,
         },
     ]
-    card_y = 3_700_000
-    card_h = 2_200_000
+    card_y = 3_350_000
+    card_h = 2_700_000
     card_w = 3_500_000
     gap = 300_000
     start_x = (SLIDE_W.emu - card_w * 3 - gap * 2) // 2
@@ -636,13 +644,13 @@ def slide_problem():
         # Top color bar
         add_rect(s, x, card_y, card_w, 80_000, fill=p["color"])
         # Big number
-        add_text(s, x + 280_000, card_y + 250_000, 1_500_000, 600_000,
+        add_text(s, x + 280_000, card_y + 220_000, 1_500_000, 600_000,
                  p["num"], size=36, color=p["color"], bold=True, font=FONT_MONO)
         # Title
-        add_text(s, x + 280_000, card_y + 900_000, card_w - 560_000, 450_000,
+        add_text(s, x + 280_000, card_y + 860_000, card_w - 560_000, 450_000,
                  p["title"], size=18, color=NAVY, bold=True)
         # Body
-        add_text(s, x + 280_000, card_y + 1_400_000, card_w - 560_000, card_h - 1_500_000,
+        add_text(s, x + 280_000, card_y + 1_360_000, card_w - 560_000, card_h - 1_440_000,
                  p["body"], size=12, color=GRAY_700, line_spacing=1.5)
     add_footer(s)
 
@@ -698,9 +706,9 @@ def slide_market_why_now():
         add_bullets(s, x + 280_000, start_y + 1_280_000, col_w - 400_000, col_h - 1_350_000,
                     m["facts"], size=13, bullet_color=m["color"], color=NAVY)
 
-    # Why now band
-    why_y = start_y + col_h + 280_000
-    add_rect(s, 660_000, why_y, SLIDE_W.emu - 1_320_000, 1_100_000, fill=NAVY)
+    # Why now band — taller to hold 2 body lines cleanly
+    why_y = start_y + col_h + 240_000
+    add_rect(s, 660_000, why_y, SLIDE_W.emu - 1_320_000, 1_500_000, fill=NAVY)
     add_text(s, 820_000, why_y + 140_000, 6_000_000, 400_000,
              "WHY NOW · 三个因素第一次合流",
              size=12, color=BLUE, bold=True)
@@ -714,8 +722,8 @@ def slide_market_why_now():
         tx = 820_000 + i * trig_w
         add_text(s, tx, why_y + 520_000, trig_w - 120_000, 300_000,
                  title, size=13, color=BLUE, bold=True, font=FONT_MONO)
-        add_text(s, tx, why_y + 830_000, trig_w - 120_000, 550_000,
-                 body, size=10, color=GRAY_300, line_spacing=1.35)
+        add_text(s, tx, why_y + 830_000, trig_w - 120_000, 620_000,
+                 body, size=10, color=GRAY_300, line_spacing=1.45)
 
     add_footer(s)
 
@@ -741,16 +749,16 @@ def slide_competitive_map():
     add_rect(s, mid_x, chart_y, 3_000, chart_h, fill=GRAY_300)
     add_rect(s, chart_x, mid_y, chart_w, 3_000, fill=GRAY_300)
 
-    # Axis labels
+    # Axis labels — use text prefix instead of emoji for font-safety
     # X-axis
     add_text(s, chart_x, chart_y + chart_h + 140_000, chart_w, 320_000,
              "AI 能力深度  →  基础检测 · · · RFID · · · 云端分类 · · · 端侧 VLM + 多模态",
              size=11, color=GRAY_500, italic=True, align=PP_ALIGN.CENTER)
-    # Y-axis (rotate via two ends)
+    # Y-axis labels, ASCII-safe
     add_text(s, chart_x - 1_900_000, chart_y + 80_000, 1_800_000, 280_000,
-             "☁️  云端部署", size=11, color=GRAY_500, italic=True, align=PP_ALIGN.RIGHT, bold=True)
+             "[ 云端 ]  部署", size=11, color=GRAY_500, italic=True, align=PP_ALIGN.RIGHT, bold=True)
     add_text(s, chart_x - 1_900_000, chart_y + chart_h - 400_000, 1_800_000, 280_000,
-             "📟  端侧部署", size=11, color=GRAY_500, italic=True, align=PP_ALIGN.RIGHT, bold=True)
+             "[ 端侧 ]  部署", size=11, color=GRAY_500, italic=True, align=PP_ALIGN.RIGHT, bold=True)
 
     # Quadrant labels (subtle, in corners)
     add_text(s, chart_x + 80_000, chart_y + 80_000, 3_000_000, 300_000,
@@ -763,19 +771,24 @@ def slide_competitive_map():
              "Q4  端侧 VLM · · 我们", size=10, color=BLUE, bold=True)
 
     # Plot competitors (x, y are 0-1 within chart)
+    # Dots dispersed to avoid label collisions in dense quadrants.
     competitors = [
         # (label, x_frac, y_frac, color, size)
-        ("Furbo",        0.20, 0.25, GRAY_500, 10),
-        ("Petcube",      0.30, 0.20, GRAY_500, 10),
-        ("Sure Petcare", 0.15, 0.75, GRAY_500, 10),  # RFID endpoint (端 + 基础)
-        ("WOpet",        0.25, 0.28, GRAY_500, 10),
-        ("Petnet",       0.28, 0.30, GRAY_500, 10),
-        ("PETKIT 小佩",    0.35, 0.60, GRAY_500, 10),
-        ("米家",          0.22, 0.68, GRAY_500, 10),
-        ("CATLINK",      0.30, 0.63, GRAY_500, 10),
-        ("凡米",          0.18, 0.70, GRAY_500, 10),
-        # Our position: high AI + edge
-        ("Train-Pet-Pipeline", 0.80, 0.80, BLUE, 13),
+        # Q1 (云端 · 基础) — 4 foreign cam/feeder brands, staircase layout
+        ("Furbo",        0.12, 0.18, GRAY_500, 10),
+        ("Petcube",      0.28, 0.12, GRAY_500, 10),
+        ("WOpet",        0.15, 0.30, GRAY_500, 10),
+        ("Petnet",       0.32, 0.26, GRAY_500, 10),
+        # Q2 (云端 · 较深 AI) — nobody today sits deep; placed at frontier
+        # (omitted; cleaner visual)
+        # Q3 (端侧 · 基础) — RFID + China smart-home brands, staircase
+        ("Sure Petcare", 0.10, 0.58, GRAY_500, 10),
+        ("凡米",          0.14, 0.72, GRAY_500, 10),
+        ("米家",          0.22, 0.62, GRAY_500, 10),
+        ("CATLINK",      0.28, 0.80, GRAY_500, 10),
+        ("PETKIT 小佩",    0.36, 0.68, GRAY_500, 10),
+        # Q4 (端侧 · VLM 级深 AI) — our position, isolated and emphasised
+        ("Train-Pet-Pipeline", 0.80, 0.78, BLUE, 13),
     ]
     for label, xf, yf, color, fsize in competitors:
         is_us = label == "Train-Pet-Pipeline"
@@ -805,10 +818,7 @@ def slide_competitive_map():
                  bold=is_us,
                  font=FONT_SANS if is_us else FONT_SANS)
 
-    # Caveat
-    add_text(s, 660_000, SLIDE_H.emu - 600_000, SLIDE_W.emu - 1_320_000, 280_000,
-             "位置为定性估计；竞品产品线多元，此处以旗舰 AI 品类为代表定位",
-             size=9, color=GRAY_500, italic=True)
+    # (Caveat removed — subtitle already sets the qualitative-positioning framing.)
     add_footer(s)
 
 
@@ -821,11 +831,11 @@ def slide_competitor_foreign():
 
     headers = ["产品", "定位", "AI 能力", "端侧 / 云", "多模态", "价格带"]
     rows = [
-        ["Furbo",         "狗主摄像头 + 零食投掷",   "云端 bark 检测 / 宠物识别",   "☁️ 云端为主",      "视频 + 零食",        "¥1500 – 3000"],
-        ["Petcube",       "互动摄像头 + 激光逗猫",   "云端基础识别",                "☁️ 云端",          "视频 + 双向音频",     "¥1000 – 2500"],
-        ["Petnet",        "智能喂食器 (初创)",        "基本 IoT + 云端调度",         "☁️ 云端",          "仅投喂",             "¥800 – 2000"],
-        ["Sure Petcare",  "Microchip 识别喂食",       "RFID 硬件识别",               "📟 端侧 RFID",    "仅 RFID + 秤",       "¥1200 – 3000"],
-        ["WOpet",         "喂食器 + 摄像头捆绑",      "基础动物检测",                "☁️ 云端",          "视频 + 投喂",         "¥600 – 1500"],
+        ["Furbo",         "狗主摄像头 + 零食投掷",   "云端 bark 检测 / 宠物识别",   "云端为主",      "视频 + 零食",        "¥1500 – 3000"],
+        ["Petcube",       "互动摄像头 + 激光逗猫",   "云端基础识别",                "云端",          "视频 + 双向音频",     "¥1000 – 2500"],
+        ["Petnet",        "智能喂食器 (初创)",        "基本 IoT + 云端调度",         "云端",          "仅投喂",             "¥800 – 2000"],
+        ["Sure Petcare",  "Microchip 识别喂食",       "RFID 硬件识别",               "端侧 · RFID",    "仅 RFID + 秤",       "¥1200 – 3000"],
+        ["WOpet",         "喂食器 + 摄像头捆绑",      "基础动物检测",                "云端",          "视频 + 投喂",         "¥600 – 1500"],
     ]
     _draw_comp_table(s, headers, rows, y_start=1_820_000)
 
@@ -847,11 +857,11 @@ def slide_competitor_china():
 
     headers = ["产品", "定位", "AI 能力", "端侧 / 云", "多模态", "价格带"]
     rows = [
-        ["PETKIT 小佩",   "全品类智能宠物硬件",       "摄像头基础识别 + 云端",       "☁️ 云端为主",      "视频 + 投喂 + 饮水",    "¥500 – 2500"],
-        ["米家 / 小米",   "米家生态 IoT 产品",        "基础动作识别",                "☁️ 云端",          "视频 + 投喂",           "¥200 – 1000"],
-        ["CATLINK 凯特灵", "智能猫砂 + 投喂",         "基础检测 / 数据统计",         "☁️ 云端",          "猫砂 + 体重 + 投喂",    "¥800 – 2500"],
-        ["凡米 Fami",     "喂食器专精品牌",           "定时 + 基础识别",             "☁️ 云端",          "仅投喂",                "¥300 – 1200"],
-        ["米家生态链 / 其他", "多个白牌",             "基础 IoT",                    "☁️ 云端",          "视频 + 投喂",           "¥200 – 800"],
+        ["PETKIT 小佩",   "全品类智能宠物硬件",       "摄像头基础识别 + 云端",       "云端为主",      "视频 + 投喂 + 饮水",    "¥500 – 2500"],
+        ["米家 / 小米",   "米家生态 IoT 产品",        "基础动作识别",                "云端",          "视频 + 投喂",           "¥200 – 1000"],
+        ["CATLINK 凯特灵", "智能猫砂 + 投喂",         "基础检测 / 数据统计",         "云端",          "猫砂 + 体重 + 投喂",    "¥800 – 2500"],
+        ["凡米 Fami",     "喂食器专精品牌",           "定时 + 基础识别",             "云端",          "仅投喂",                "¥300 – 1200"],
+        ["米家生态链 / 其他", "多个白牌",             "基础 IoT",                    "云端",          "视频 + 投喂",           "¥200 – 800"],
     ]
     _draw_comp_table(s, headers, rows, y_start=1_820_000)
 
@@ -864,8 +874,11 @@ def slide_competitor_china():
 
 
 def _draw_comp_table(s, headers, rows, y_start):
-    """Shared competitor-table renderer."""
-    col_widths = [1_700_000, 2_500_000, 2_700_000, 1_700_000, 1_900_000, 1_800_000]
+    """Shared competitor-table renderer.
+
+    col_widths total = 10_700_000 EMU = 11.70"; slide usable = 11.89"
+    (13.33 - 2*0.722" margin). Leaves ~0.10" safety on each side."""
+    col_widths = [1_500_000, 2_150_000, 2_300_000, 1_500_000, 1_650_000, 1_600_000]
     x0 = (SLIDE_W.emu - sum(col_widths)) // 2
     row_h = 500_000
     header_h = 500_000
@@ -900,34 +913,43 @@ def slide_differentiation():
                    "唯一在端侧落地 VLM-grade 行为理解 + 音频事件 + 签名 OTA 的方案",
                    section_num="DIFFERENTIATION")
 
-    # Two columns: 大多数竞品 vs 我们
-    start_y = 1_750_000
-    col_h = 3_700_000
-    gap = 300_000
-    col_w = (SLIDE_W.emu - 1_320_000 - gap) // 2
-    left_x = 660_000
+    # 3-col grid: [dim tag | 大多数竞品 | Train-Pet-Pipeline]
+    # All within slide: slide 13.33" - 2×0.72" margin = 11.89" usable.
+    # tag = 1.4"  + gap 0.25" + col 4.95" + gap 0.25" + col 4.95" ≈ 11.80"
+    start_y = 1_700_000
+    col_h = 4_500_000
+    gap = 230_000
+    tag_w = 1_280_000
+    col_w = (SLIDE_W.emu - 1_320_000 - tag_w - 2 * gap) // 2
+    tag_x = 660_000
+    left_x = tag_x + tag_w + gap
     right_x = left_x + col_w + gap
 
     dimensions = [
-        ("AI 能力",          "云端基础动作识别",               "端侧 VLM 行为理解 + 结构化 JSON"),
-        ("多模态",           "视频为主，音频不做处理",         "视频 + 音频事件 (呕吐/吃饭/饮水/...)"),
-        ("隐私",             "视频传云；隐私合规压力",         "全程端侧推理，视频不出设备"),
-        ("延迟",             "2 – 5 秒起（往返云）",           "< 4 秒 P95（本地）"),
-        ("可升级",           "厂商云服务耦合",                  "签名 OTA + canary 灰度 + 回滚"),
-        ("离线可用",         "断网基本失效",                    "纯端侧能力；网络只用于 OTA"),
+        ("AI 能力",    "云端基础动作识别",               "端侧 VLM 行为理解 + 结构化 JSON"),
+        ("多模态",     "视频为主，音频不做处理",         "视频 + 音频事件 (呕吐/吃饭/饮水/…)"),
+        ("隐私",       "视频传云；隐私合规压力",         "全程端侧推理，视频不出设备"),
+        ("延迟",       "2 – 5 秒起（往返云）",            "< 4 秒 P95（本地）"),
+        ("可升级",     "厂商云服务耦合",                  "签名 OTA + canary 灰度 + 回滚"),
+        ("离线可用",   "断网基本失效",                    "纯端侧能力；网络只用于 OTA"),
     ]
 
-    # Left — majority
+    # Headers
+    # tag column header (empty placeholder)
+    add_text(s, tag_x, start_y + 220_000, tag_w, 400_000,
+             "维度", size=11, color=GRAY_500, italic=True, bold=True,
+             align=PP_ALIGN.RIGHT)
+    # left header — majority
     add_rect(s, left_x, start_y, col_w, 90_000, fill=GRAY_500)
-    add_text(s, left_x + 200_000, start_y + 160_000, col_w - 400_000, 450_000,
-             "大多数竞品", size=18, color=GRAY_500, bold=True)
-    add_text(s, left_x + 200_000, start_y + 660_000, col_w - 400_000, 300_000,
+    add_text(s, left_x + 180_000, start_y + 160_000, col_w - 360_000, 450_000,
+             "大多数竞品", size=17, color=GRAY_500, bold=True)
+    add_text(s, left_x + 180_000, start_y + 660_000, col_w - 360_000, 300_000,
              "基础 IoT + 云端", size=11, color=GRAY_500, italic=True)
-    # Right — us
+    # right header — us
     add_rect(s, right_x, start_y, col_w, 90_000, fill=BLUE)
-    add_text(s, right_x + 200_000, start_y + 160_000, col_w - 400_000, 450_000,
-             "Train-Pet-Pipeline", size=18, color=BLUE, bold=True)
-    add_text(s, right_x + 200_000, start_y + 660_000, col_w - 400_000, 300_000,
+    add_text(s, right_x + 180_000, start_y + 160_000, col_w - 360_000, 450_000,
+             "Train-Pet-Pipeline", size=17, color=BLUE, bold=True)
+    add_text(s, right_x + 180_000, start_y + 660_000, col_w - 360_000, 300_000,
              "端侧 VLM + 多模态 + 签名 OTA", size=11, color=BLUE, italic=True)
 
     # Dimension rows
@@ -935,21 +957,21 @@ def slide_differentiation():
     row_h = (col_h - 1_200_000) // len(dimensions)
     for ri, (dim, them, us) in enumerate(dimensions):
         y = rows_y + ri * row_h
-        # Dimension tag
-        add_text(s, left_x - 700_000, y + 60_000, 640_000, row_h - 80_000,
-                 dim, size=10, color=GRAY_500, italic=True, bold=True, align=PP_ALIGN.RIGHT,
-                 anchor=MSO_ANCHOR.MIDDLE)
+        # Dimension tag — inside slide, right-aligned
+        add_text(s, tag_x, y + 60_000, tag_w - 80_000, row_h - 80_000,
+                 dim, size=12, color=NAVY, italic=False, bold=True,
+                 align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
         # Left cell
         add_rect(s, left_x, y + 40_000, col_w, row_h - 80_000,
                  fill=WHITE, line=GRAY_300, line_w=0.5)
-        add_text(s, left_x + 200_000, y + 60_000, col_w - 400_000, row_h - 80_000,
-                 them, size=11.5, color=GRAY_700, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.3)
-        # Right cell
+        add_text(s, left_x + 180_000, y + 60_000, col_w - 360_000, row_h - 80_000,
+                 them, size=11, color=GRAY_700, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.3)
+        # Right cell (accent left border)
         add_rect(s, right_x, y + 40_000, col_w, row_h - 80_000,
                  fill=WHITE, line=BLUE, line_w=1)
         add_rect(s, right_x, y + 40_000, 60_000, row_h - 80_000, fill=BLUE)
-        add_text(s, right_x + 200_000, y + 60_000, col_w - 400_000, row_h - 80_000,
-                 us, size=11.5, color=NAVY, bold=True, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.3)
+        add_text(s, right_x + 180_000, y + 60_000, col_w - 360_000, row_h - 80_000,
+                 us, size=11, color=NAVY, bold=True, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.3)
 
     add_footer(s)
 
@@ -998,26 +1020,27 @@ def slide_solution():
         add_text(s, x + 260_000, base_y + 900_000, card_w - 500_000, card_h - 1_000_000,
                  p["body"], size=11.5, color=GRAY_700, line_spacing=1.5)
 
-    # Hardware side-bar: chip + camera + mic icons
-    hw_y = base_y + card_h + 320_000
-    add_rect(s, 660_000, hw_y, SLIDE_W.emu - 1_320_000, 1_100_000, fill=NAVY)
+    # Hardware side-bar — taller to hold 2-line desc per component
+    hw_y = base_y + card_h + 280_000
+    add_rect(s, 660_000, hw_y, SLIDE_W.emu - 1_320_000, 1_500_000, fill=NAVY)
     add_text(s, 820_000, hw_y + 140_000, 5_000_000, 400_000,
              "HARDWARE · 设备内置", size=12, color=BLUE, bold=True)
+    # Use ASCII-safe glyphs so LibreOffice / non-emoji fonts render consistently
     components = [
-        ("🔲", "RK3576 SoC", "6 TOPS NPU · VLM + Audio\n同时推理"),
-        ("📷", "Camera", "1080p · 广角\n端侧流入 VLM"),
-        ("🎤", "Microphone", "高采样率 mic\n音频事件检测"),
-        ("🥣", "Feeder Motor", "定量投喂\n受 VLM 决策驱动"),
+        ("▣", "RK3576 SoC", "6 TOPS NPU · VLM + Audio\n同时推理"),
+        ("▦", "Camera",     "1080p · 广角\n端侧流入 VLM"),
+        ("◉", "Microphone", "高采样率 mic\n音频事件检测"),
+        ("◈", "Feeder Motor", "定量投喂\n受 VLM 决策驱动"),
     ]
     cw = (SLIDE_W.emu - 1_640_000) // 4
     for i, (icon, name, desc) in enumerate(components):
         cx = 820_000 + i * cw
-        add_text(s, cx, hw_y + 560_000, 400_000, 400_000,
-                 icon, size=22, color=WHITE)
-        add_text(s, cx + 440_000, hw_y + 570_000, cw - 500_000, 300_000,
+        add_text(s, cx, hw_y + 550_000, 400_000, 400_000,
+                 icon, size=22, color=BLUE, bold=True)
+        add_text(s, cx + 440_000, hw_y + 560_000, cw - 500_000, 300_000,
                  name, size=12, color=WHITE, bold=True, font=FONT_MONO)
-        add_text(s, cx + 440_000, hw_y + 840_000, cw - 500_000, 280_000,
-                 desc, size=9.5, color=GRAY_300, line_spacing=1.3)
+        add_text(s, cx + 440_000, hw_y + 840_000, cw - 500_000, 600_000,
+                 desc, size=9.5, color=GRAY_300, line_spacing=1.45)
 
     add_footer(s)
 
@@ -1033,7 +1056,7 @@ def slide_user_journey():
         {
             "num": "1",
             "title": "开箱",
-            "body": "扫码联网\nLabel Studio 同级简单 setup",
+            "body": "扫码联 Wi-Fi\n3 分钟完成绑定",
             "color": BLUE,
         },
         {
@@ -1051,7 +1074,7 @@ def slide_user_journey():
         {
             "num": "4",
             "title": "异常预警",
-            "body": "呕吐 / 拒食 / 行为异常\napp 即时通知 + 视频段\n首 30 秒 free",
+            "body": "呕吐 / 拒食 / 行为异常\napp 即时通知 + 回看视频\n前 30 秒预览免费",
             "color": CORAL,
         },
         {
@@ -1468,11 +1491,13 @@ slide_repo_modules(
     modules=[
         ("Always-available", [
             ("noop_converter", "零 SDK · CI smoke\n产确定性 fake EdgeArtifact"),
+            ("PET_ALLOW_MISSING_SDK=1", "逃生旗标 · CI / dev 默认开\n缺 SDK → logger.warning 跳过"),
+            ("entry-point 注册", "pet_infra.plugins.pet_quantize\n被 orchestrator 发现"),
         ]),
         ("rknn cluster", [
             ("audio_rknn_fp16", "FP16 · 无需 calib"),
             ("vision_rknn_fp16", "FP16 opt_level=3\n输出 ONNX + RKNN"),
-            ("audio/vision calibration_subset", "DATASETS"),
+            ("audio/vision calibration_subset", "DATASETS\n采样帧 → calib tensor"),
         ]),
         ("rkllm cluster", [
             ("vlm_rkllm_w4a16", "W4A16 · 需 calib batch"),
@@ -1685,11 +1710,11 @@ def slide_ci_guards():
     repos = ["pet-schema", "pet-infra", "pet-data", "pet-annotation",
              "pet-train", "pet-eval", "pet-quantize", "pet-ota", "pet-id"]
     workflows = [
-        ("ci.yml", "lint + mypy + pytest"),
-        ("peer-dep-smoke.yml", "独立装序 smoke"),
-        ("no-wandb-residue.yml", "positive-list 扫 \\bwandb\\b"),
-        ("schema_guard.yml", "pet-schema dispatch 全链"),
-        ("cross-repo-smoke-install.yml", "matrix row 装序验证"),
+        ("ci.yml",                  "lint + mypy + pytest"),
+        ("peer-dep-smoke.yml",      "独立装序 smoke"),
+        ("no-wandb-residue.yml",    "positive-list 扫 \\bwandb\\b"),
+        ("schema_guard.yml",        "pet-schema dispatch 全链"),
+        ("cross-repo-smoke.yml",    "matrix row 装序验证"),   # display-shortened; file is cross-repo-smoke-install.yml
     ]
     # Presence grid: cell value = True/False or special
     grid = {
@@ -1769,8 +1794,7 @@ def slide_northstar():
             "tagline": "插件化程度",
             "score": 5,
             "evidence": [
-                "7 registries 覆盖 TRAINERS / EVALUATORS /",
-                "CONVERTERS / METRICS / DATASETS / STORAGE / OTA",
+                "7 registries 覆盖 TRAINERS · EVALUATORS · CONVERTERS · METRICS · DATASETS · STORAGE · OTA",
                 "每仓插件 entry-point 注册; orchestrator 发现加载",
             ],
             "color": BLUE,
@@ -1857,16 +1881,17 @@ def slide_status_closeout():
 
     # Horizontal phase timeline
     phases = [
-        ("1", "pet-schema", "pre"),
-        ("2", "pet-infra", "v2.6.0"),
-        ("3", "pet-data", "v1.3.0"),
-        ("4", "pet-annotation", "v2.1.1"),
-        ("5", "pet-train", "v2.0.2"),
-        ("6", "pet-eval", "v2.3.0"),
-        ("7", "pet-quantize", "v2.1.0"),
-        ("8", "pet-ota", "v2.2.0"),
-        ("9", "pet-id", "v0.2.0"),
-        ("10", "closeout", "matrix\n2026.10"),
+        # (num, repo_key, display_name, version)
+        ("1",  "pet-schema",     "pet-schema",  "pre"),
+        ("2",  "pet-infra",      "pet-infra",   "v2.6.0"),
+        ("3",  "pet-data",       "pet-data",    "v1.3.0"),
+        ("4",  "pet-annotation", "pet-annot",   "v2.1.1"),
+        ("5",  "pet-train",      "pet-train",   "v2.0.2"),
+        ("6",  "pet-eval",       "pet-eval",    "v2.3.0"),
+        ("7",  "pet-quantize",   "pet-quant",   "v2.1.0"),
+        ("8",  "pet-ota",        "pet-ota",     "v2.2.0"),
+        ("9",  "pet-id",         "pet-id",      "v0.2.0"),
+        ("10", None,             "closeout",    "matrix\n2026.10"),
     ]
     timeline_y = 2_300_000
     n = len(phases)
@@ -1877,18 +1902,18 @@ def slide_status_closeout():
     start_x = (SLIDE_W.emu - total_w) // 2
     # Backbone line
     add_rect(s, start_x, timeline_y + box_h // 2 - 10_000, total_w, 20_000, fill=BLUE)
-    for i, (num, name, ver) in enumerate(phases):
+    for i, (num, repo_key, display, ver) in enumerate(phases):
         x = start_x + i * (box_w + gap)
-        color = REPO_COLORS.get(name, BLUE)
+        color = REPO_COLORS.get(repo_key, BLUE) if repo_key else BLUE
         # Phase dot
         add_rect(s, x + box_w // 2 - 80_000, timeline_y + box_h // 2 - 80_000,
                  160_000, 160_000, fill=color, shape=MSO_SHAPE.OVAL)
         # Phase number above
         add_text(s, x, timeline_y - 380_000, box_w, 280_000,
                  f"Phase {num}", size=10, color=GRAY_500, bold=True, align=PP_ALIGN.CENTER)
-        # Repo name below
+        # Repo name below (abbreviated where long names would wrap)
         add_text(s, x, timeline_y + box_h + 120_000, box_w, 280_000,
-                 name, size=10.5, color=NAVY, bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
+                 display, size=10.5, color=NAVY, bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
         # Version lower
         add_text(s, x, timeline_y + box_h + 440_000, box_w, 420_000,
                  ver, size=9.5, color=color, align=PP_ALIGN.CENTER, line_spacing=1.2)
@@ -1920,10 +1945,10 @@ def slide_future():
                    "retrospective §8 · 9 条（3 条 Phase 4 遗留 + 6 条本轮新增）",
                    section_num="§ 11 · 未来")
 
-    # Two-column layout
+    # Two-column layout — usable width ~11.89"; col 5.65" each + 0.44" gap + 2×0.72" margin ≈ 12.18"
     left_x = 660_000
-    right_x = 660_000 + 5_800_000 + 400_000
-    col_w = 5_800_000
+    col_w = 5_170_000
+    right_x = left_x + col_w + 400_000
     start_y = 1_800_000
     col_h = 4_200_000
 

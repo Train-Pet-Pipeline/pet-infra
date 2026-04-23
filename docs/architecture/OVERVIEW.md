@@ -1,7 +1,7 @@
 # Train-Pet-Pipeline 系统技术设计总览
 
 > 维护说明：`compatibility_matrix.yaml` 加行 / 依赖治理规则改动必须同步本文档
-> 最后对齐：matrix row 2026.09 / 2026-04-23 (Phase 2 ecosystem optimization)
+> 最后对齐：matrix row 2026.10-ecosystem-cleanup / 2026-04-23 (Phase 10 ecosystem optimization closeout)
 
 ---
 
@@ -118,17 +118,17 @@ Python 无原生 peer-dep 概念，项目通过以下约定模拟：
 
 > 此表记录**两个状态**：**当前实际** (Actual) = 今天 CI workflow 跑的装序；**β 目标** (Target) = 所有 Phase 完成后的装序。`Current` 列里标了 ✓ 表示仓已迁移到 β；`(Phase N target)` 表示未迁移，本仓 Phase 会修到 β。CI workflow 路径从 `compatibility_matrix.yaml releases[-1]` 行取版本号。
 
-| 仓 | Current (2026-04-23) | Target β (Phase 对齐后) | CI workflow | 迁移 Phase |
-|---|---|---|---|---|
-| pet-schema | ✓ β (链首无 peer-dep) — 1 步 | 同 Current | `pet-schema/.github/workflows/ci.yml` | Phase 1 ✓ 已完成 |
-| pet-infra | ✓ β (pet-schema peer) — 3 步 (① pet-schema peer → ② `-e ".[dev,api,sync]"` → ③ test_version parity) | 同 Current | `pet-infra/.github/workflows/ci.yml` | Phase 2 ✓ 本次 |
-| pet-data | 仍硬 pin `pet-schema@v2.0.0`；CI 4 步（pet-infra peer + editable + dev extras + assert） | β: pet-schema + pet-infra 双 peer，5 步 | `pet-data/.github/workflows/ci.yml` | Phase 3 target |
-| pet-annotation | 仍硬 pin `pet-schema@v2.1.0`；CI 4 步 | β: 双 peer，5 步 | `pet-annotation/.github/workflows/ci.yml` | Phase 4 target |
-| pet-train | pet-schema 无 pin bare string；CI 4 步 | β: 双 peer + fail-fast guard，5 步 | `pet-train/.github/workflows/ci.yml` | Phase 5 target |
-| pet-eval | pet-schema 无 pin；CI **8 步** (① schema → ② infra → ③ train → ④ quantize → ⑤ editable --no-deps → ⑥ editable dev → ⑦ re-pin schema+infra → ⑧ 4-module assert) | β: 同上 + fail-fast guard | `pet-eval/.github/workflows/ci.yml` | Phase 6 target |
-| pet-quantize | 硬 pin 两个 (`pet-schema@v2.4.0` + `pet-infra@v2.5.0`)；CI 4 步 | β: 双 peer，5 步 | `pet-quantize/.github/workflows/ci.yml` | Phase 7 target |
-| pet-ota | 硬 pin `pet-infra@v2.5.0`；`pet-quantize` 在 `[signing]` 可选；CI **4 步**（pet-infra peer + editable + dev + assert） | β: pet-schema N/A (本仓不依赖) + pet-infra peer + pet-quantize 运行时 peer | `pet-ota/.github/workflows/ci.yml` | Phase 8 target |
-| pet-id | ✓ 无 pet-* 依赖（独立工具）— 1 步 | 同 Current | TBD（pet-id 当前无 `.github/workflows/` 目录，Phase 9 可能新增） | Phase 9 ✓ 独立 |
+| 仓 | Current (2026-04-23, matrix 2026.10) | CI workflow | 迁移 Phase |
+|---|---|---|---|
+| pet-schema | ✓ β (链首无 peer-dep) — 1 步 | `pet-schema/.github/workflows/ci.yml` | Phase 1 ✓ |
+| pet-infra | ✓ β (pet-schema peer) — 3 步 | `pet-infra/.github/workflows/ci.yml` | Phase 2 ✓ |
+| pet-data | ✓ β (pet-schema + pet-infra 双 peer) — 5 步 | `pet-data/.github/workflows/ci.yml` | Phase 3 ✓ |
+| pet-annotation | ✓ β (双 peer) — 5 步 | `pet-annotation/.github/workflows/ci.yml` | Phase 4 + Phase 5 ✓ |
+| pet-train | ✓ β (双 peer + fail-fast guard) — 5 步 | `pet-train/.github/workflows/ci.yml` | Phase 5 ✓ |
+| pet-eval | ✓ β (pet-schema + pet-infra peer；pet-train + pet-quantize 运行时 peer)；CI **8 步** (① schema → ② infra → ③ train → ④ quantize → ⑤ editable --no-deps → ⑥ editable dev → ⑦ re-pin schema+infra → ⑧ 4-module assert) | `pet-eval/.github/workflows/ci.yml` | Phase 6 ✓ |
+| pet-quantize | ✓ β (pet-infra peer via `_register.py` delayed guard, option X) + α hardpin pet-schema@v3.2.1；CI 4 步 | `pet-quantize/.github/workflows/ci.yml` | Phase 7 ✓ (7A) |
+| pet-ota | ✓ β (pet-infra peer via delayed guard, option X)；`pet-quantize` 在 `[signing]` extras **no-pin**；CI 4 步 | `pet-ota/.github/workflows/ci.yml` | Phase 8 ✓ (8A + 8B) |
+| pet-id | ✓ 独立 (无 pet-* 依赖，spec §5.2)；Phase 9 新加 `.github/workflows/ci.yml` + `no-wandb-residue.yml`（**首次 CI**） | `pet-id/.github/workflows/ci.yml` | Phase 9 ✓ |
 
 ### cross-repo-smoke-install.yml
 
@@ -141,10 +141,11 @@ Python 无原生 peer-dep 概念，项目通过以下约定模拟：
 | workflow | 仓 | 触发条件 | 作用 |
 |---|---|---|---|
 | `schema_guard.yml` | pet-schema | push/PR to dev/main | 派发 `repository_dispatch` 给 8 个下游仓触发全链 CI |
-| `cross-repo-smoke-install.yml` | pet-infra | matrix.yaml 变更（push to dev/main）| 新增：按最新 row 装 7 仓 + import assert，确保矩阵与实际 wheel 匹配 |
-| `no-wandb-residue.yml` | pet-infra | push/PR | 确保代码中无 W&B 残留（Phase 4 移除 W&B）|
-| `ci.yml` | 所有仓 | push/PR + repository_dispatch | 标准 lint + test，3-step 装序（schema peer → `-e .[dev]` → lint+test）|
-| `no-wandb-residue.yml` | pet-train, pet-eval, pet-quantize | push/PR | Phase 5/6/7 将补充 |
+| `cross-repo-smoke-install.yml` | pet-infra | matrix.yaml 变更（push to dev/main）+ workflow_dispatch | 按最新 row 装 7 仓 + import assert。Phase 10 端到端验证：7/7 绿 |
+| `no-wandb-residue.yml` | pet-infra / pet-train / pet-eval / pet-quantize / pet-ota / pet-id | push/PR | positive-list 扫描；pet-infra 从 Phase 4 起；pet-train Phase 5 / pet-eval Phase 6 / pet-quantize Phase 7 / pet-ota Phase 8 / pet-id Phase 9 陆续补齐 |
+| `ci.yml` | 所有仓 | push/PR + repository_dispatch | 标准 lint + test。pet-id 的 ci.yml 是 Phase 9 首次 onboarding |
+| `peer-dep-smoke.yml` | pet-data / pet-annotation / pet-train / pet-eval / pet-quantize / pet-ota | PR | 每仓专用的 peer-dep 装序 smoke（本仓独立装序契约验证，与 cross-repo smoke 互补） |
+| `quantize_validate.yml` | pet-quantize | workflow_dispatch | 硬件 smoke（`pytest src/pet_quantize/validate/ --device-id <serial>`）。Phase 7 ② ③ 修了之前的 `python -m pet_quantize.validate` 死调用；Phase 5 硬件接入时真触发 |
 
 ---
 

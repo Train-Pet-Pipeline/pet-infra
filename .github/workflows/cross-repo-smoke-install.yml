@@ -35,6 +35,9 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
+      - name: Install PyYAML for matrix parsing
+        run: pip install --disable-pip-version-check pyyaml
+
       - name: Parse compatibility_matrix.yaml and emit env vars
         id: parse_matrix
         run: |

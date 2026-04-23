@@ -487,112 +487,1177 @@ def draw_position_strip(s, y, current):
              font=FONT_MONO, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 
 
-# ---- Per-repo slide templates ----
+# ---- Visual primitives for per-repo technical slides ----
 
-def slide_repo_intro(repo, section_num, title, tagline,
-                     does, does_not, page):
-    s = new_slide()
+def draw_tech_stack_grid(s, top_y, techs, *, card_h=900_000, cols=None, gap=220_000):
+    """Render a grid of tech-stack cards.
+
+    techs: list of (name_mono, role_desc, color). Card layout:
+      [color band · name (mono, bold) · role (italic small)]
+    """
+    n = len(techs)
+    if cols is None:
+        cols = 2 if n <= 4 else 3
+    rows = (n + cols - 1) // cols
+    usable = SLIDE_W.emu - 1_320_000
+    card_w = (usable - gap * (cols - 1)) // cols
+    start_x = 660_000
+    for i, (name, role, color) in enumerate(techs):
+        r = i // cols
+        c = i % cols
+        x = start_x + c * (card_w + gap)
+        y = top_y + r * (card_h + gap)
+        add_rect(s, x, y, card_w, card_h, fill=WHITE, line=GRAY_300, line_w=0.75)
+        # Left accent band
+        add_rect(s, x, y, 80_000, card_h, fill=color)
+        # Name (mono bold)
+        add_text(s, x + 220_000, y + 160_000, card_w - 320_000, 440_000,
+                 name, size=14, color=NAVY, bold=True, font=FONT_MONO)
+        # Role description
+        add_text(s, x + 220_000, y + 560_000, card_w - 320_000, card_h - 620_000,
+                 role, size=11, color=GRAY_700, italic=True, line_spacing=1.4)
+
+
+def draw_pipeline_flow(s, y, stages, *, arrow_color=GRAY_500, box_h=1_100_000):
+    """Render a horizontal box+arrow pipeline.
+
+    stages: list of (label_main, label_sub, color). Drawn with consistent
+    box width (auto-computed) and a right-arrow between each pair.
+    """
+    n = len(stages)
+    usable = SLIDE_W.emu - 1_320_000
+    gap = 200_000
+    box_w = (usable - gap * (n - 1)) // n
+    start_x = 660_000
+    for i, (label, sub, color) in enumerate(stages):
+        x = start_x + i * (box_w + gap)
+        add_rect(s, x, y, box_w, box_h, fill=WHITE, line=color, line_w=1.2)
+        add_rect(s, x, y, box_w, 70_000, fill=color)
+        add_text(s, x + 60_000, y + 200_000, box_w - 120_000, 440_000,
+                 label, size=13, color=NAVY, bold=True,
+                 font=FONT_MONO, align=PP_ALIGN.CENTER)
+        add_text(s, x + 120_000, y + 680_000, box_w - 240_000, box_h - 720_000,
+                 sub, size=10, color=GRAY_500, align=PP_ALIGN.CENTER,
+                 line_spacing=1.4)
+        if i < n - 1:
+            add_arrow_right(s, x + box_w + 20_000,
+                            y + box_h // 2 - 100_000,
+                            gap - 40_000, 200_000, color=arrow_color)
+
+
+def draw_tech_header(s, repo, title, subtitle):
     color = REPO_COLORS[repo]
-    add_header_bar(s, title, tagline, section_num=section_num, accent=color)
+    add_header_bar(s, title, subtitle, section_num=f"§ {repo}", accent=color)
 
-    # Position strip
-    draw_position_strip(s, 1_650_000, current=repo)
 
-    # Two-column: Does / Does not
-    col_y = 2_600_000
-    col_h = 2_900_000
-    col_w = 5_100_000
-    gap = 280_000
+# ============================================================================
+# Per-repo technical slides — tech stack + flow + design takeaway
+# ============================================================================
+
+# ---- pet-schema (2 slides) ----
+
+def slide_schema_tech():
+    s = new_slide()
+    draw_tech_header(s, "pet-schema",
+                     "pet-schema · 契约根节点",
+                     "链首零上游 · 8 仓通过 `import pet_schema` 消费")
+    # 2-col: left = tech stack, right = 主要数据模型一览
+    top_y = 1_750_000
+    techs = [
+        ("Pydantic v2",      "extra='forbid' 严格校验\n所有跨仓数据模型",  BLUE),
+        ("Alembic",          "DB schema 演化\n历史文件 immutable，只加",  TEAL),
+        ("JSON Schema",      "运行时 VLM 输出校验\nPetFeederEvent v1.0",  AMBER),
+        ("HF datasets",      "Features 适配器\nSFT / DPO JSONL 兼容",     CORAL),
+    ]
+    # Left half grid
+    usable = (SLIDE_W.emu - 1_320_000) // 2 - 120_000
+    card_w = (usable - 200_000) // 2
+    for i, (name, role, color) in enumerate(techs):
+        r, c = i // 2, i % 2
+        x = 660_000 + c * (card_w + 200_000)
+        y = top_y + r * (1_100_000 + 200_000)
+        add_rect(s, x, y, card_w, 1_100_000, fill=WHITE, line=GRAY_300, line_w=0.75)
+        add_rect(s, x, y, 80_000, 1_100_000, fill=color)
+        add_text(s, x + 220_000, y + 160_000, card_w - 320_000, 420_000,
+                 name, size=13, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, x + 220_000, y + 560_000, card_w - 320_000, 480_000,
+                 role, size=10.5, color=GRAY_700, italic=True, line_spacing=1.45)
+
+    # Right half: 主要 data model 按类别分组
+    right_x = 660_000 + usable + 280_000
+    right_w = SLIDE_W.emu - right_x - 660_000
+    add_rect(s, right_x, top_y, right_w, 90_000, fill=REPO_COLORS["pet-schema"])
+    add_text(s, right_x + 160_000, top_y + 160_000, right_w, 440_000,
+             "核心数据模型", size=14, color=REPO_COLORS["pet-schema"], bold=True)
+    groups = [
+        ("训练契约",     ["Sample", "VisionSample / AudioSample",
+                         "SFTSample / ShareGPTSFTSample", "DPOSample"]),
+        ("编排 · 产物", ["ExperimentRecipe", "ModelCard",
+                         "EdgeArtifact + QuantConfig", "DeploymentStatus"]),
+        ("运行时",      ["validator.validate_output()",
+                         "render_prompt(schema_version)",
+                         "adapters/hf_features.py"]),
+    ]
+    # Flow layout per group (avoids category/items row-height clipping)
+    cursor_y = top_y + 640_000
+    cat_gap = 180_000
+    item_h = 260_000
+    for cat, items in groups:
+        add_text(s, right_x + 160_000, cursor_y, right_w - 200_000, 260_000,
+                 cat, size=11, color=GRAY_500, bold=True)
+        cursor_y += 320_000
+        for item in items:
+            add_text(s, right_x + 220_000, cursor_y, right_w - 260_000, item_h,
+                     item, size=10, color=NAVY, font=FONT_MONO)
+            cursor_y += item_h
+        cursor_y += cat_gap
+    add_footer(s, repo="pet-schema")
+
+
+def slide_schema_flow():
+    s = new_slide()
+    draw_tech_header(s, "pet-schema",
+                     "pet-schema · 契约传播 + Alembic 演化",
+                     "SCHEMA_VERSION 常量 + Alembic head 一致扩散到 8 仓下游")
+    # Hub: pet-schema box centered
+    hub_w = 3_400_000
+    hub_h = 1_400_000
+    hub_x = (SLIDE_W.emu - hub_w) // 2
+    hub_y = 1_900_000
+    color = REPO_COLORS["pet-schema"]
+    add_rect(s, hub_x, hub_y, hub_w, hub_h, fill=color)
+    add_text(s, hub_x, hub_y + 200_000, hub_w, 450_000,
+             "pet-schema", size=22, color=WHITE, bold=True, font=FONT_MONO,
+             align=PP_ALIGN.CENTER)
+    add_text(s, hub_x, hub_y + 700_000, hub_w, 400_000,
+             "SCHEMA_VERSION = 3.2.1", size=13, color=WHITE, bold=True,
+             font=FONT_MONO, align=PP_ALIGN.CENTER)
+    add_text(s, hub_x, hub_y + 1_020_000, hub_w, 350_000,
+             "extra='forbid' · Alembic head: 013_schema_v3_2_1",
+             size=10, color=WHITE, italic=True, align=PP_ALIGN.CENTER)
+
+    # 8 downstream: 4 left + 4 right
+    consumers = [
+        ("pet-data",        "VisionSample · AudioSample\nSourceType"),
+        ("pet-annotation",  "4 paradigm tables\nSFTSample · DPOSample"),
+        ("pet-train",       "SFT/DPO JSONL 契约\nModelCard output"),
+        ("pet-eval",        "ModelCard.metrics\nvalidate_output"),
+        ("pet-quantize",    "EdgeArtifact\nQuantConfig · calib_dir"),
+        ("pet-ota",         "DeploymentStatus\nModelCard.deployment_history"),
+        ("pet-infra",       "Recipe · StageRunner 基础契约"),
+        ("render_prompt",   "train / infer 同源 prompt"),
+    ]
+    left_consumers = consumers[:4]
+    right_consumers = consumers[4:]
+    card_w = 2_700_000
+    card_h = 680_000
+    gap = 100_000
+    # left column
+    for i, (name, what) in enumerate(left_consumers):
+        x = 660_000
+        y = 1_850_000 + i * (card_h + gap)
+        add_rect(s, x, y, card_w, card_h, fill=WHITE, line=GRAY_300, line_w=0.6)
+        add_rect(s, x, y, 60_000, card_h, fill=REPO_COLORS.get(name, GRAY_500))
+        add_text(s, x + 160_000, y + 60_000, card_w - 220_000, 280_000,
+                 name, size=11, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, x + 160_000, y + 340_000, card_w - 220_000, card_h - 380_000,
+                 what, size=9.5, color=GRAY_500, line_spacing=1.4)
+        # Arrow from hub to this card
+        add_arrow_right(s, x + card_w, y + card_h // 2 - 50_000,
+                        hub_x - (x + card_w) - 40_000, 100_000, color=color)
+    # right column (arrows point FROM hub to card → use LEFT_ARROW? python-pptx lacks directly — use a thin bar + label visual)
+    for i, (name, what) in enumerate(right_consumers):
+        x = SLIDE_W.emu - 660_000 - card_w
+        y = 1_850_000 + i * (card_h + gap)
+        add_rect(s, x, y, card_w, card_h, fill=WHITE, line=GRAY_300, line_w=0.6)
+        add_rect(s, x + card_w - 60_000, y, 60_000, card_h, fill=REPO_COLORS.get(name, GRAY_500))
+        add_text(s, x + 160_000, y + 60_000, card_w - 220_000, 280_000,
+                 name, size=11, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, x + 160_000, y + 340_000, card_w - 220_000, card_h - 380_000,
+                 what, size=9.5, color=GRAY_500, line_spacing=1.4)
+        # Connector
+        add_arrow_right(s, hub_x + hub_w + 20_000, y + card_h // 2 - 50_000,
+                        x - (hub_x + hub_w) - 40_000, 100_000, color=color)
+
+    add_footer(s, repo="pet-schema")
+
+
+# ---- pet-infra (3 slides) ----
+
+def slide_infra_tech():
+    s = new_slide()
+    draw_tech_header(s, "pet-infra",
+                     "pet-infra · 核心技术栈",
+                     "共享运行时 — 其他 8 仓都以 pet-infra 为 peer-dep")
+    techs = [
+        ("mmengine Registry",  "7 registries 基座\nTRAINERS / EVALUATORS / CONVERTERS / METRICS / DATASETS / STORAGE / OTA", BLUE),
+        ("Hydra + hydra-zen",  "defaults-list 组合 recipe\ncomposable + override-friendly", TEAL),
+        ("entry_points",       "plugin 发现机制\ngroup=\"pet_infra.plugins\"",                AMBER),
+        ("networkx",           "Stage DAG + topological_sort\nresume-from-cache 确定性",      REPO_COLORS["pet-infra"]),
+        ("ClearML",            "唯一实验追踪\nW&B 已 Phase 4 物理移除",                        CORAL),
+        ("click",              "CLI 子命令\npet run / replay / sweep",                         GRAY_700),
+    ]
+    draw_tech_stack_grid(s, 1_800_000, techs, cols=3, card_h=1_600_000, gap=220_000)
+    add_footer(s, repo="pet-infra")
+
+
+def slide_infra_flow():
+    s = new_slide()
+    draw_tech_header(s, "pet-infra",
+                     "pet-infra · Recipe → ModelCard 流水线",
+                     "compose_recipe() → DAG → StageRunner loop → ModelCard + ClearML")
+    stages = [
+        ("recipe.yaml",      "Hydra defaults-list\n+ overrides",                     GRAY_500),
+        ("compose_recipe()", "hydra-zen 解析\n+ variations 展开",                      BLUE),
+        ("build_dag()",      "networkx topological_sort\n+ stage.depends_on",        TEAL),
+        ("StageRunner",      "_load_stage_kwargs\n+ registry.build(**cfg)",          AMBER),
+        ("plugin.run()",     "consumer repo 的\n@register_module 实现",                REPO_COLORS["pet-infra"]),
+        ("ModelCard",        "pet-schema 契约\n+ ClearMLLogger push",                CORAL),
+    ]
+    draw_pipeline_flow(s, 2_000_000, stages, box_h=1_400_000)
+    # Below: side-channel — StageCache + resume
+    note_y = 3_600_000
+    add_rect(s, 660_000, note_y, SLIDE_W.emu - 1_320_000, 1_300_000, fill=GRAY_100)
+    add_text(s, 820_000, note_y + 160_000, 4_000_000, 400_000,
+             "SIDE CHANNELS", size=11, color=BLUE, bold=True)
+    sides = [
+        ("StageCache (~/.pet-cache)", "card_id = hash(recipe, stage, config_sha)\n缓存命中 → 跳过执行；resume 可恢复任意 stage"),
+        ("ClearMLLogger",             "每 stage start/end 自动 push\nmetrics + ModelCard 对齐可 replay"),
+        ("Replay (pet run --replay)", "从历史 ModelCard 反演 config\n确定性重跑训练 run"),
+    ]
+    sw = (SLIDE_W.emu - 1_640_000) // 3
+    for i, (title, body) in enumerate(sides):
+        sx = 820_000 + i * sw
+        add_text(s, sx, note_y + 560_000, sw - 120_000, 280_000,
+                 title, size=11, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, sx, note_y + 840_000, sw - 120_000, 400_000,
+                 body, size=10, color=GRAY_700, line_spacing=1.4)
+    add_footer(s, repo="pet-infra")
+
+
+def slide_infra_registries():
+    s = new_slide()
+    draw_tech_header(s, "pet-infra",
+                     "pet-infra · 7 Registries · 插件发现",
+                     "每仓通过 entry_points 注册；orchestrator 按 registry.get(type) 构造插件")
+    # 7 registries — 7 equal-size cells across 2 rows (4+3)
+    reg_cells = [
+        ("TRAINERS",   "pet-train",              "llamafactory_sft · llamafactory_dpo · tiny_test"),
+        ("EVALUATORS", "pet-eval",               "vlm · audio · quantized_vlm + 3 fusion"),
+        ("METRICS",    "pet-eval",               "schema / anomaly / mood / narrative / latency / audio / kl / calibration"),
+        ("CONVERTERS", "pet-quantize",           "noop · vlm_rkllm_w4a16 · audio_rknn_fp16 · vision_rknn_fp16"),
+        ("DATASETS",   "pet-data · pet-quantize", "vlm / vision / audio calibration_subset"),
+        ("STORAGE",    "pet-infra",              "local · s3 · http · file  (STORAGE.build(uri))"),
+        ("OTA",        "pet-ota",                "local_backend · s3_backend · http_backend"),
+    ]
+    start_y = 1_800_000
+    card_w = 2_720_000
+    card_h = 1_500_000
+    gap = 200_000
+    row1 = reg_cells[:4]
+    row2 = reg_cells[4:]
+    # Row 1 (4 cells, centered)
+    r1_total = 4 * card_w + 3 * gap
+    r1_x0 = (SLIDE_W.emu - r1_total) // 2
+    for i, (reg, owner, content) in enumerate(row1):
+        x = r1_x0 + i * (card_w + gap)
+        y = start_y
+        add_rect(s, x, y, card_w, card_h, fill=WHITE, line=REPO_COLORS[owner.split(" ")[0]], line_w=1.2)
+        add_rect(s, x, y, card_w, 70_000, fill=REPO_COLORS[owner.split(" ")[0]])
+        add_text(s, x, y + 160_000, card_w, 400_000, reg, size=14, color=NAVY,
+                 bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
+        add_text(s, x, y + 600_000, card_w, 280_000, f"owner · {owner}", size=9,
+                 color=GRAY_500, italic=True, align=PP_ALIGN.CENTER)
+        add_text(s, x + 160_000, y + 900_000, card_w - 320_000, card_h - 950_000,
+                 content, size=9.5, color=GRAY_700, line_spacing=1.45, align=PP_ALIGN.CENTER)
+    # Row 2 (3 cells, centered)
+    r2_total = 3 * card_w + 2 * gap
+    r2_x0 = (SLIDE_W.emu - r2_total) // 2
+    for i, (reg, owner, content) in enumerate(row2):
+        x = r2_x0 + i * (card_w + gap)
+        y = start_y + card_h + 260_000
+        owner_key = owner.split(" ")[0]
+        add_rect(s, x, y, card_w, card_h, fill=WHITE, line=REPO_COLORS[owner_key], line_w=1.2)
+        add_rect(s, x, y, card_w, 70_000, fill=REPO_COLORS[owner_key])
+        add_text(s, x, y + 160_000, card_w, 400_000, reg, size=14, color=NAVY,
+                 bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
+        add_text(s, x, y + 600_000, card_w, 280_000, f"owner · {owner}", size=9,
+                 color=GRAY_500, italic=True, align=PP_ALIGN.CENTER)
+        add_text(s, x + 160_000, y + 900_000, card_w - 320_000, card_h - 950_000,
+                 content, size=9.5, color=GRAY_700, line_spacing=1.45, align=PP_ALIGN.CENTER)
+    add_footer(s, repo="pet-infra")
+
+
+# ---- pet-data (2 slides) ----
+
+def slide_data_tech():
+    s = new_slide()
+    draw_tech_header(s, "pet-data",
+                     "pet-data · 数据采集 + 清洗技术栈",
+                     "7 Ingester · FFmpeg 解帧 · dHash 去重 · blur/brightness 质量闸 · SQLite + Alembic")
+    techs = [
+        ("FFmpeg",        "视频解帧 · 提取关键帧\n1080p @ 可配置 FPS",           BLUE),
+        ("dHash (pHash)", "感知哈希去重\n相似度阈值 + 汉明距离",                 TEAL),
+        ("PIL · OpenCV",  "blur 检测 + brightness 直方图\nQualityFilter 门槛",   AMBER),
+        ("7 Ingester",    "YouTubeIngester · CommunityIngester · Selfshot\nMock · Dryrun · ...",  REPO_COLORS["pet-data"]),
+        ("SQLite + Alembic", "frames + audio_samples 两表\n004 migration · 历史 immutable", CORAL),
+        ("DATASETS plugin",  "VisionSample / AudioSample export\n通过 pet-infra registry 被下游消费", GRAY_700),
+    ]
+    draw_tech_stack_grid(s, 1_800_000, techs, cols=3, card_h=1_500_000, gap=220_000)
+    add_footer(s, repo="pet-data")
+
+
+def slide_data_flow():
+    s = new_slide()
+    draw_tech_header(s, "pet-data",
+                     "pet-data · Ingest Pipeline",
+                     "从原始 URL 到 annotation-ready Sample · 每 stage 可独立扩展")
+    stages = [
+        ("Ingester",      "YouTube / Community / ...\nURL → 本地 mp4",                BLUE),
+        ("Frame Extract", "FFmpeg 解帧\n提取至 frames/*.jpg",                          TEAL),
+        ("Dedup",         "dHash 感知哈希\n相似度 ≤ 阈值则去重",                         AMBER),
+        ("Quality Filter", "blur 方差 ≥ 下界\nbrightness 分布合格",                    REPO_COLORS["pet-data"]),
+        ("Anomaly Score", "弱监督打分\n标注任务优先级",                                 CORAL),
+        ("SQLite Write",  "frames 表 + Alembic\nannotation_status='pending'",          GRAY_700),
+    ]
+    draw_pipeline_flow(s, 2_100_000, stages, box_h=1_500_000)
+    # Bottom note
+    note_y = 3_800_000
+    add_rect(s, 660_000, note_y, SLIDE_W.emu - 1_320_000, 1_000_000, fill=GRAY_100)
+    add_text(s, 820_000, note_y + 180_000, SLIDE_W.emu - 1_640_000, 300_000,
+             "下游消费", size=11, color=BLUE, bold=True)
+    add_text(s, 820_000, note_y + 490_000, SLIDE_W.emu - 1_640_000, 460_000,
+             "pet-annotation 只读 frames 表（跨仓只读 URI 模式）· "
+             "pet-train DATASETS plugin 读 VisionSample / AudioSample · "
+             "dedup 铁律：禁 skip 旗标（feedback_no_manual_workaround）",
+             size=11, color=GRAY_700, line_spacing=1.5)
+    add_footer(s, repo="pet-data")
+
+
+# ---- pet-annotation (2 slides) ----
+
+def slide_annotation_tech():
+    s = new_slide()
+    draw_tech_header(s, "pet-annotation",
+                     "pet-annotation · 4 范式打标架构",
+                     "LLM · classifier · rule · human 并行独立存 —— 不跨 annotator reconcile")
+    # 4 lanes visualized horizontally
+    start_y = 1_850_000
+    lane_w = 2_750_000
+    lane_h = 2_700_000
+    gap = 200_000
+    total_w = 4 * lane_w + 3 * gap
+    start_x = (SLIDE_W.emu - total_w) // 2
+    lanes = [
+        {
+            "name": "LLM",
+            "impl": "OpenAI-compatible API",
+            "desc": "Qwen2-VL / GPT-4o\n结构化 JSON prompt\nrender_prompt 同源",
+            "table": "LLMAnnotation",
+            "color": BLUE,
+        },
+        {
+            "name": "classifier",
+            "impl": "PyTorch fine-tuned",
+            "desc": "小模型监督分类\nhot-swap 可替换\nbatch inference",
+            "table": "ClassifierAnnotation",
+            "color": TEAL,
+        },
+        {
+            "name": "rule",
+            "impl": "programmatic",
+            "desc": "确定性规则\nheuristic 基线\nboxed metrics",
+            "table": "RuleAnnotation",
+            "color": AMBER,
+        },
+        {
+            "name": "human",
+            "impl": "Label Studio 1.23",
+            "desc": "session auth\nimport / export\nDPO pair 构造",
+            "table": "HumanAnnotation",
+            "color": CORAL,
+        },
+    ]
+    for i, L in enumerate(lanes):
+        x = start_x + i * (lane_w + gap)
+        add_rect(s, x, start_y, lane_w, lane_h, fill=WHITE, line=L["color"], line_w=1.2)
+        add_rect(s, x, start_y, lane_w, 80_000, fill=L["color"])
+        add_text(s, x, start_y + 160_000, lane_w, 440_000,
+                 L["name"], size=18, color=L["color"], bold=True, align=PP_ALIGN.CENTER)
+        add_text(s, x, start_y + 640_000, lane_w, 300_000,
+                 L["impl"], size=10.5, color=GRAY_500, italic=True, align=PP_ALIGN.CENTER)
+        add_text(s, x + 160_000, start_y + 1_100_000, lane_w - 320_000, 1_000_000,
+                 L["desc"], size=11, color=NAVY, line_spacing=1.5, align=PP_ALIGN.CENTER)
+        # Storage table pill
+        add_rect(s, x + 300_000, start_y + lane_h - 500_000, lane_w - 600_000, 380_000,
+                 fill=GRAY_100, line=GRAY_300, line_w=0.5)
+        add_text(s, x, start_y + lane_h - 460_000, lane_w, 280_000,
+                 L["table"], size=10, color=NAVY, bold=True,
+                 font=FONT_MONO, align=PP_ALIGN.CENTER)
+    # Caption
+    add_text(s, 660_000, 4_950_000, SLIDE_W.emu - 1_320_000, 320_000,
+             "每 annotator 写各自表（D4 决策 · 不做 majority-vote reconcile）· "
+             "AnnotationOrchestrator 并发调度 (target × annotator)",
+             size=10.5, color=GRAY_500, italic=True, align=PP_ALIGN.CENTER)
+    add_footer(s, repo="pet-annotation")
+
+
+def slide_annotation_flow():
+    s = new_slide()
+    draw_tech_header(s, "pet-annotation",
+                     "pet-annotation · Orchestrator + SFT/DPO Exporter",
+                     "并发 fan-out → 4 独立表 → LLaMA-Factory JSONL (α 方向，spec §5.3)")
+    # Fan-out diagram — 4 columns: target | orchestrator | 4 branches | exporter
+    row_y = 2_100_000
+    row_h = 2_800_000
+
     left_x = 660_000
-    right_x = left_x + col_w + gap
+    target_w = 1_900_000
+    # target box
+    add_rect(s, left_x, row_y, target_w, row_h, fill=NAVY)
+    add_text(s, left_x, row_y + 360_000, target_w, 500_000,
+             "target_id", size=18, color=WHITE, bold=True, align=PP_ALIGN.CENTER,
+             font=FONT_MONO)
+    add_text(s, left_x + 120_000, row_y + 1_000_000, target_w - 240_000, 800_000,
+             "从 pet-data frames\n(pending targets)", size=10, color=GRAY_300,
+             align=PP_ALIGN.CENTER, italic=True, line_spacing=1.5)
 
-    # "做什么"
-    add_rect(s, left_x, col_y, col_w, 70_000, fill=color)
-    add_text(s, left_x + 160_000, col_y + 140_000, col_w, 380_000,
-             "做什么", size=15, color=color, bold=True)
-    add_bullets(s, left_x + 160_000, col_y + 560_000, col_w - 160_000, col_h - 600_000,
-                does, size=12.5, bullet_color=color)
+    # orchestrator
+    orch_x = left_x + target_w + 180_000
+    orch_w = 2_400_000
+    add_rect(s, orch_x, row_y, orch_w, row_h, fill=REPO_COLORS["pet-annotation"])
+    add_text(s, orch_x, row_y + 360_000, orch_w, 500_000,
+             "AnnotationOrchestrator", size=13, color=WHITE, bold=True,
+             align=PP_ALIGN.CENTER, font=FONT_MONO)
+    add_text(s, orch_x + 120_000, row_y + 1_000_000, orch_w - 240_000, 1_000_000,
+             "并发 (target × annotator)\n组合调度\n每 annotator 独立写表",
+             size=11, color=WHITE, align=PP_ALIGN.CENTER, italic=True, line_spacing=1.5)
 
-    # "不做什么"
-    add_rect(s, right_x, col_y, col_w, 70_000, fill=GRAY_300)
-    add_text(s, right_x + 160_000, col_y + 140_000, col_w, 380_000,
-             "不做什么", size=15, color=GRAY_500, bold=True)
-    add_bullets(s, right_x + 160_000, col_y + 560_000, col_w - 160_000, col_h - 600_000,
-                does_not, size=12.5, color=GRAY_500, bullet_color=GRAY_300)
+    # Arrow target → orchestrator
+    add_arrow_right(s, left_x + target_w + 20_000, row_y + row_h // 2 - 100_000,
+                    140_000, 200_000, color=GRAY_500)
 
-    add_footer(s, repo=repo, slide_num=page)
+    # 4 branches
+    branch_x = orch_x + orch_w + 260_000
+    branch_w = 1_900_000
+    branch_h = 520_000
+    branch_gap = 140_000
+    branches = [
+        ("LLM",        BLUE,   "LLMAnnotation"),
+        ("classifier", TEAL,   "ClassifierAnnotation"),
+        ("rule",       AMBER,  "RuleAnnotation"),
+        ("human",      CORAL,  "HumanAnnotation"),
+    ]
+    total_branches_h = 4 * branch_h + 3 * branch_gap
+    by_start = row_y + (row_h - total_branches_h) // 2
+    for i, (name, c, table) in enumerate(branches):
+        y = by_start + i * (branch_h + branch_gap)
+        add_rect(s, branch_x, y, branch_w, branch_h, fill=WHITE, line=c, line_w=1.0)
+        add_rect(s, branch_x, y, 70_000, branch_h, fill=c)
+        add_text(s, branch_x + 140_000, y + 60_000, branch_w - 180_000, 220_000,
+                 name, size=12, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, branch_x + 140_000, y + 280_000, branch_w - 180_000, 220_000,
+                 table, size=9, color=GRAY_500, font=FONT_MONO, italic=True)
+        # Connector from orchestrator right edge to each branch left
+        conn_src_x = orch_x + orch_w
+        conn_dst_x = branch_x
+        conn_y = y + branch_h // 2 - 4_000
+        add_rect(s, conn_src_x, conn_y, conn_dst_x - conn_src_x, 8_000,
+                 fill=REPO_COLORS["pet-annotation"])
+
+    # Exporter box
+    exp_x = branch_x + branch_w + 200_000
+    exp_w = SLIDE_W.emu - exp_x - 660_000
+    # Connect each branch to exporter left edge via a short horizontal line
+    for i in range(4):
+        y = by_start + i * (branch_h + branch_gap) + branch_h // 2 - 4_000
+        add_rect(s, branch_x + branch_w, y, exp_x - (branch_x + branch_w), 8_000,
+                 fill=REPO_COLORS["pet-annotation"])
+
+    exp_h = 2_100_000
+    exp_y = row_y + 240_000
+    add_rect(s, exp_x, exp_y, exp_w, exp_h, fill=WHITE,
+             line=REPO_COLORS["pet-annotation"], line_w=1.2)
+    add_rect(s, exp_x, exp_y, exp_w, 70_000, fill=REPO_COLORS["pet-annotation"])
+    add_text(s, exp_x, exp_y + 160_000, exp_w, 400_000,
+             "sft_dpo.py exporter", size=13, color=NAVY, bold=True,
+             font=FONT_MONO, align=PP_ALIGN.CENTER)
+    add_text(s, exp_x + 160_000, exp_y + 640_000, exp_w - 320_000, 700_000,
+             "to_sft_samples()  →  SFTSample JSONL\n"
+             "to_dpo_pairs()    →  DPOSample JSONL",
+             size=10.5, color=GRAY_700, line_spacing=1.6, font=FONT_MONO)
+    # F11 box inside
+    add_rect(s, exp_x + 160_000, exp_y + 1_420_000, exp_w - 320_000, 580_000,
+             fill=GRAY_100)
+    add_text(s, exp_x + 280_000, exp_y + 1_480_000, exp_w - 560_000, 280_000,
+             "F11 producer-side validator", size=10, color=NAVY, bold=True, font=FONT_MONO)
+    add_text(s, exp_x + 280_000, exp_y + 1_760_000, exp_w - 560_000, 300_000,
+             "DPOSample.model_validate() per row",
+             size=9, color=GRAY_500, italic=True, font=FONT_MONO)
+
+    # Consumer band
+    pt_y = exp_y + exp_h + 180_000
+    add_rect(s, exp_x, pt_y, exp_w, 460_000, fill=REPO_COLORS["pet-train"])
+    add_text(s, exp_x, pt_y + 110_000, exp_w, 300_000,
+             "→ pet-train consumes", size=12, color=WHITE, bold=True,
+             font=FONT_MONO, align=PP_ALIGN.CENTER)
+
+    add_footer(s, repo="pet-annotation")
 
 
-def slide_repo_modules(repo, section_num, title, tagline, modules, page, notes=None):
-    """modules: list of (category, items) where items is list of (name, desc)."""
+# ---- pet-train (2 slides) ----
+
+def slide_train_tech():
     s = new_slide()
-    color = REPO_COLORS[repo]
-    add_header_bar(s, title, tagline, section_num=section_num, accent=color)
-
-    # Modules as grid of cards grouped by category
-    start_y = 1_750_000
-    avail_h = SLIDE_H.emu - start_y - 800_000
-    n = len(modules)
-    col_gap = 220_000
-    total_w = SLIDE_W.emu - 1_320_000
-    col_w = (total_w - col_gap * (n - 1)) // n
-
-    for ci, (cat, items) in enumerate(modules):
-        x = 660_000 + ci * (col_w + col_gap)
-        # Category header
-        add_rect(s, x, start_y, col_w, 70_000, fill=color)
-        add_text(s, x + 160_000, start_y + 120_000, col_w - 160_000, 360_000,
-                 cat, size=13, color=color, bold=True)
-        # Items
-        row_y = start_y + 500_000
-        row_h = (avail_h - 500_000) // max(len(items), 1)
-        for ri, (name, desc) in enumerate(items):
-            y = row_y + ri * row_h
-            add_rect(s, x, y + 20_000, col_w, row_h - 60_000,
-                     fill=WHITE, line=GRAY_300, line_w=0.5)
-            # Name line
-            add_text(s, x + 160_000, y + 80_000, col_w - 160_000, 340_000,
-                     name, size=11.5, color=NAVY, bold=True, font=FONT_MONO)
-            # Desc
-            add_text(s, x + 160_000, y + 420_000, col_w - 160_000, row_h - 500_000,
-                     desc, size=10, color=GRAY_500, line_spacing=1.3)
-
-    if notes:
-        add_text(s, 660_000, SLIDE_H.emu - 720_000, SLIDE_W.emu - 1_320_000, 280_000,
-                 notes, size=10, color=GRAY_500, italic=True)
-
-    add_footer(s, repo=repo, slide_num=page)
+    draw_tech_header(s, "pet-train",
+                     "pet-train · 核心技术栈",
+                     "LLaMA-Factory vendored · PEFT LoRA · DPO · PANNs · F11 consumer validator")
+    techs = [
+        ("LLaMA-Factory v0.9.4", "Apache-2.0 vendored (plain dir)\nrun_sft / run_dpo workflow",       BLUE),
+        ("PEFT LoRA",            "低秩适配微调 (r / alpha / lr)\nHF peft + Transformers",            TEAL),
+        ("DPO · pref_beta=0.1",  "sft_adapter_path 为 base\n从 pet-annotation DPO pair 训练",         AMBER),
+        ("PANNs MobileNetV2",    "AudioSet 527 classes\nmel-spectrogram zero-shot",                   REPO_COLORS["pet-train"]),
+        ("Lazy run_sft import",  "module-load 不拉 LLaMA-Factory\n避免 transformers 脆弱上游",        CORAL),
+        ("F11 JSONL validator",  "validate_sft_jsonl / validate_dpo_jsonl\n训练前严校 (双端都验)",    GRAY_700),
+    ]
+    draw_tech_stack_grid(s, 1_800_000, techs, cols=3, card_h=1_550_000, gap=220_000)
+    add_footer(s, repo="pet-train")
 
 
-def slide_repo_design(repo, section_num, title, tagline, designs, page):
-    """designs: list of (point, rationale_if_removed)."""
+def slide_train_flow():
     s = new_slide()
-    color = REPO_COLORS[repo]
-    add_header_bar(s, title, tagline, section_num=section_num, accent=color)
+    draw_tech_header(s, "pet-train",
+                     "pet-train · SFT + DPO 训练流水线",
+                     "共享 LoRA + F11 validator · DPO 以 SFT adapter 为 base")
+    # Two parallel rows: SFT pipeline, DPO pipeline
+    row_h = 1_200_000
+    sft_y = 1_900_000
+    dpo_y = sft_y + row_h + 300_000
 
-    # Design points as 2-col rows: point | what would be lost if removed
-    table_y = 1_750_000
-    row_h = (SLIDE_H.emu - table_y - 900_000) // len(designs)
-    left_col_w = 4_600_000
-    right_col_w = SLIDE_W.emu - 1_320_000 - left_col_w - 200_000
+    def draw_row(y, title, color, stages):
+        # Row label
+        add_rect(s, 660_000, y, 1_100_000, row_h, fill=color)
+        add_text(s, 660_000, y, 1_100_000, row_h, title, size=18, color=WHITE,
+                 bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+        # Stages
+        start_x = 660_000 + 1_100_000 + 200_000
+        usable = SLIDE_W.emu - 660_000 - start_x
+        n = len(stages)
+        gap = 140_000
+        box_w = (usable - gap * (n - 1)) // n
+        for i, (label, sub) in enumerate(stages):
+            x = start_x + i * (box_w + gap)
+            add_rect(s, x, y, box_w, row_h, fill=WHITE, line=color, line_w=1.0)
+            add_rect(s, x, y, box_w, 60_000, fill=color)
+            add_text(s, x, y + 180_000, box_w, 400_000,
+                     label, size=12, color=NAVY, bold=True,
+                     font=FONT_MONO, align=PP_ALIGN.CENTER)
+            add_text(s, x + 100_000, y + 600_000, box_w - 200_000, row_h - 660_000,
+                     sub, size=10, color=GRAY_500, align=PP_ALIGN.CENTER, line_spacing=1.4)
+            if i < n - 1:
+                add_arrow_right(s, x + box_w + 20_000, y + row_h // 2 - 80_000,
+                                gap - 40_000, 160_000, color=GRAY_500)
 
-    for ri, (pt, why) in enumerate(designs):
-        y = table_y + ri * row_h
-        # Left: point
-        add_rect(s, 660_000, y + 40_000, left_col_w, row_h - 80_000,
-                 fill=WHITE, line=color, line_w=1.0)
-        # Accent strip on left
-        add_rect(s, 660_000, y + 40_000, 100_000, row_h - 80_000, fill=color)
-        add_text(s, 830_000, y + 100_000, left_col_w - 200_000, row_h - 150_000,
-                 pt, size=12, color=NAVY, bold=True, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.3)
-        # Right: why / rationale
-        right_x = 660_000 + left_col_w + 200_000
-        add_rect(s, right_x, y + 40_000, right_col_w, row_h - 80_000,
-                 fill=GRAY_100)
-        add_text(s, right_x + 180_000, y + 100_000, right_col_w - 300_000, row_h - 150_000,
-                 why, size=11, color=GRAY_700, italic=True, anchor=MSO_ANCHOR.MIDDLE, line_spacing=1.35)
+    draw_row(sft_y, "SFT", BLUE, [
+        ("SFT JSONL",        "ShareGPT format\nfrom pet-annotation"),
+        ("F11 validator",    "validate_sft_jsonl\n早失败 file:line"),
+        ("run_sft(**cfg)",   "lora_r / alpha / lr\nfrom params.yaml"),
+        ("LoRA adapter",     "output_dir/adapter\nPEFT safetensors"),
+        ("ModelCard",        "checkpoint_uri\n+ metrics"),
+    ])
+    draw_row(dpo_y, "DPO", AMBER, [
+        ("DPO JSONL",        "DPOSample pairs\nchosen/rejected"),
+        ("F11 validator",    "validate_dpo_jsonl\npref pair schema"),
+        ("run_dpo(**cfg)",   "pref_beta=0.1\nsft_adapter_path"),
+        ("DPO adapter",      "基于 SFT 继续\n对齐 preference"),
+        ("ModelCard",        "checkpoint_uri\n+ metrics"),
+    ])
+    # Bottom: tiny_test mention
+    tiny_y = dpo_y + row_h + 280_000
+    add_rect(s, 660_000, tiny_y, SLIDE_W.emu - 1_320_000, 450_000, fill=GRAY_100)
+    add_text(s, 820_000, tiny_y + 100_000, SLIDE_W.emu - 1_640_000, 300_000,
+             "tiny_test trainer · CPU-only smoke <2min · 独立 plugin · PR-gate 不需 GPU",
+             size=11, color=GRAY_700, italic=True)
+    add_footer(s, repo="pet-train")
 
-    add_footer(s, repo=repo, slide_num=page)
+
+# ---- pet-eval (2 slides) ----
+
+def slide_eval_tech():
+    s = new_slide()
+    draw_tech_header(s, "pet-eval",
+                     "pet-eval · 8 Metrics + 6 Evaluators 架构",
+                     "@METRICS / @EVALUATORS 装饰注册 · rule-based fusion only · apply_gate 决策")
+    # Two-col: left = 8 metrics, right = 6 evaluators
+    top_y = 1_800_000
+    col_gap = 300_000
+    col_w = (SLIDE_W.emu - 1_320_000 - col_gap) // 2
+    left_x = 660_000
+    right_x = left_x + col_w + col_gap
+
+    # Left: METRICS (8 cards in 4×2 grid inside left col)
+    add_rect(s, left_x, top_y, col_w, 90_000, fill=REPO_COLORS["pet-eval"])
+    add_text(s, left_x + 160_000, top_y + 160_000, col_w, 400_000,
+             "@METRICS · 8", size=16, color=REPO_COLORS["pet-eval"], bold=True)
+    metrics = [
+        ("schema_compliance",    "compliance_rate + distribution_sum_error"),
+        ("anomaly_recall",       "TPR + FPR"),
+        ("mood_correlation",     "Spearman × 3 dim"),
+        ("narrative_quality",    "BERTScore F1 (Chinese)"),
+        ("latency",              "P50 / P95 / P99 interp"),
+        ("audio_accuracy",       "overall + vomit_recall"),
+        ("kl_quantization",      "fp16 ↔ quant distribution"),
+        ("calibration",          "ECE · informational only"),
+    ]
+    m_start = top_y + 620_000
+    m_h = 440_000
+    for i, (name, sub) in enumerate(metrics):
+        r = i // 2
+        c = i % 2
+        iw = (col_w - 320_000) // 2
+        x = left_x + 160_000 + c * (iw + 0)
+        y = m_start + r * m_h
+        add_rect(s, x, y, iw, m_h - 60_000, fill=WHITE, line=GRAY_300, line_w=0.5)
+        add_text(s, x + 80_000, y + 50_000, iw - 140_000, 220_000,
+                 name, size=10, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, x + 80_000, y + 250_000, iw - 140_000, 140_000,
+                 sub, size=8.5, color=GRAY_500, italic=True)
+
+    # Right: EVALUATORS (3 primary + 3 fusion)
+    add_rect(s, right_x, top_y, col_w, 90_000, fill=REPO_COLORS["pet-eval"])
+    add_text(s, right_x + 160_000, top_y + 160_000, col_w, 400_000,
+             "@EVALUATORS · 6", size=16, color=REPO_COLORS["pet-eval"], bold=True)
+    primary = [
+        ("vlm_evaluator",           "Qwen2-VL + PEFT LoRA merge\n→ gold set inference → metrics"),
+        ("audio_evaluator",         "→ pet_train.audio.inference\n(跨仓 runtime)"),
+        ("quantized_vlm_evaluator", "→ pet_quantize.rkllm_runner\n(跨仓 runtime, lazy)"),
+    ]
+    fusion = [
+        ("single_modal_fusion",  "pass-through scores[modality]"),
+        ("and_gate_fusion",      "all ≥ threshold → min else 0"),
+        ("weighted_fusion",      "normalized weighted sum"),
+    ]
+    p_start = top_y + 620_000
+    p_h = 820_000
+    add_text(s, right_x + 160_000, p_start - 30_000, col_w, 240_000,
+             "PRIMARY (3)", size=9, color=GRAY_500, bold=True, italic=True)
+    for i, (name, sub) in enumerate(primary):
+        y = p_start + 220_000 + i * p_h
+        add_rect(s, right_x + 160_000, y, col_w - 320_000, p_h - 100_000,
+                 fill=WHITE, line=GRAY_300, line_w=0.5)
+        add_text(s, right_x + 240_000, y + 70_000, col_w - 480_000, 260_000,
+                 name, size=10.5, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, right_x + 240_000, y + 340_000, col_w - 480_000, p_h - 480_000,
+                 sub, size=9, color=GRAY_500, italic=True, line_spacing=1.35)
+    f_start = p_start + 220_000 + 3 * p_h + 60_000
+    add_text(s, right_x + 160_000, f_start - 30_000, col_w, 240_000,
+             "FUSION · rule-based (3) · no learned", size=9, color=GRAY_500, bold=True, italic=True)
+    for i, (name, sub) in enumerate(fusion):
+        iw = (col_w - 320_000 - 120_000) // 3
+        x = right_x + 160_000 + i * (iw + 60_000)
+        y = f_start + 220_000
+        add_rect(s, x, y, iw, 380_000, fill=WHITE, line=GRAY_300, line_w=0.5)
+        add_text(s, x + 60_000, y + 40_000, iw - 120_000, 160_000,
+                 name, size=9, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, x + 60_000, y + 200_000, iw - 120_000, 160_000,
+                 sub, size=8, color=GRAY_500, italic=True, line_spacing=1.3)
+    add_footer(s, repo="pet-eval")
+
+
+def slide_eval_flow():
+    s = new_slide()
+    draw_tech_header(s, "pet-eval",
+                     "pet-eval · 推理 → 指标 → Gate 决策",
+                     "ModelCard in · ModelCard out (gate_status: passed / failed · reason)")
+    stages = [
+        ("input ModelCard",   "checkpoint_uri\n(from pet-train)",              GRAY_500),
+        ("run_inference",     "HF + PEFT merge\ngold_set JSONL → outputs",      BLUE),
+        ("_compute_metrics",  "8 registered metrics\nwarn-and-skip on sig mismatch", TEAL),
+        ("apply_gate",        "min_<m> / max_<m>\nthresholds → pass/fail",      AMBER),
+        ("FusionEvaluator",   "rule-based 3 策略\n可选 (若 recipe 声明)",         REPO_COLORS["pet-eval"]),
+        ("output ModelCard",  "+ metrics dict\n+ gate_status + reason",          CORAL),
+    ]
+    draw_pipeline_flow(s, 2_000_000, stages, box_h=1_400_000)
+    # Safety note
+    note_y = 3_600_000
+    add_rect(s, 660_000, note_y, SLIDE_W.emu - 1_320_000, 1_300_000, fill=GRAY_100)
+    add_text(s, 820_000, note_y + 160_000, 5_000_000, 400_000,
+             "设计要点", size=11, color=BLUE, bold=True)
+    points = [
+        ("_FALLBACK_OUTPUT",   "VLM 重试失败后的安全 JSON sentinel\n防止 metric 分母错"),
+        ("prompt_source",      "gold_set | pet_schema 双轨\nsft_v2 / sft_v3+ 都可评"),
+        ("跨仓 lazy import",   "pet_train.audio · pet_quantize.rkllm\nmodule-load 不拉 SDK"),
+    ]
+    pw = (SLIDE_W.emu - 1_640_000) // 3
+    for i, (title, body) in enumerate(points):
+        px = 820_000 + i * pw
+        add_text(s, px, note_y + 580_000, pw - 120_000, 300_000,
+                 title, size=11, color=NAVY, bold=True, font=FONT_MONO)
+        add_text(s, px, note_y + 860_000, pw - 120_000, 400_000,
+                 body, size=10, color=GRAY_700, line_spacing=1.4)
+    add_footer(s, repo="pet-eval")
+
+
+# ---- pet-quantize (3 slides) ----
+
+def slide_quantize_tech():
+    s = new_slide()
+    draw_tech_header(s, "pet-quantize",
+                     "pet-quantize · 核心技术栈",
+                     "Rockchip RKNN / RKLLM SDK + torch.onnx + ADB + 签名打包")
+    techs = [
+        ("rkllm-toolkit",            "VLM → RKLLM W4A16\nPANDAS calibration batch",        BLUE),
+        ("rknn-toolkit2",            "ViT → RKNN FP16\nAudio CNN → RKNN FP16",             TEAL),
+        ("torch.onnx",               "vision encoder 导出\n中间格式",                      AMBER),
+        ("ADB bridge",               "on-device execution\ntarget='rk3576' + device_id",    REPO_COLORS["pet-quantize"]),
+        ("Content-address cache",    "sha256(modality|uri|n)[:16]\norchestrator resume-from-cache", CORAL),
+        ("SDK-gated cluster",        "PET_ALLOW_MISSING_SDK=1\n按 SDK 分组精细降级",        GRAY_700),
+    ]
+    draw_tech_stack_grid(s, 1_800_000, techs, cols=3, card_h=1_550_000, gap=220_000)
+    add_footer(s, repo="pet-quantize")
+
+
+def slide_quantize_flow():
+    s = new_slide()
+    draw_tech_header(s, "pet-quantize",
+                     "pet-quantize · Convert → EdgeArtifact",
+                     "ModelCard 分三簇按需转换 · 缺 SDK 时 cluster-level 精细降级")
+    # Layout: 3 clusters stacked vertically in middle column, ModelCard left-middle, EdgeArtifact right-middle
+    br_w = 3_200_000
+    br_h = 1_050_000
+    br_gap = 180_000
+    top_cluster_y = 1_950_000
+
+    in_w = 2_000_000
+    in_h = 1_000_000
+    in_x = 660_000
+    out_w = 2_200_000
+
+    br_x = in_x + in_w + 600_000
+    out_x = br_x + br_w + 600_000
+
+    mid_cluster_y = top_cluster_y + br_h + br_gap
+    bot_cluster_y = mid_cluster_y + br_h + br_gap
+
+    # ModelCard aligned with middle cluster center
+    in_y = mid_cluster_y + (br_h - in_h) // 2
+    add_rect(s, in_x, in_y, in_w, in_h, fill=NAVY)
+    add_text(s, in_x, in_y + 180_000, in_w, 400_000,
+             "ModelCard", size=14, color=WHITE, bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
+    add_text(s, in_x, in_y + 580_000, in_w, 380_000,
+             "checkpoint_uri\n+ calibration_batch_uri", size=9.5, color=GRAY_300,
+             italic=True, align=PP_ALIGN.CENTER, line_spacing=1.35)
+
+    clusters = [
+        ("Always-available", "noop_converter · 零 SDK · CI smoke", GRAY_500, top_cluster_y),
+        ("rknn cluster",     "audio_rknn_fp16 · vision_rknn_fp16\n+ calibration DATASETS", TEAL, mid_cluster_y),
+        ("rkllm cluster",    "vlm_rkllm_w4a16 · + vlm_calibration_subset", CORAL, bot_cluster_y),
+    ]
+    for i, (name, content, color, y) in enumerate(clusters):
+        add_rect(s, br_x, y, br_w, br_h, fill=WHITE, line=color, line_w=1.2)
+        add_rect(s, br_x, y, br_w, 70_000, fill=color)
+        add_text(s, br_x, y + 180_000, br_w, 400_000,
+                 name, size=14, color=NAVY, bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
+        add_text(s, br_x + 160_000, y + 620_000, br_w - 320_000, br_h - 680_000,
+                 content, size=10, color=GRAY_700, line_spacing=1.4, align=PP_ALIGN.CENTER)
+        # Thin connector from ModelCard right edge to cluster left edge
+        conn_src_x = in_x + in_w
+        conn_y = y + br_h // 2 - 4_000
+        add_rect(s, conn_src_x, conn_y, br_x - conn_src_x, 8_000, fill=color)
+        # Thin connector from cluster right edge to EdgeArtifact left edge
+        add_rect(s, br_x + br_w, conn_y, out_x - (br_x + br_w), 8_000, fill=color)
+
+    # Output EdgeArtifact aligned with middle cluster center
+    out_h = 1_000_000
+    out_y = in_y
+    add_rect(s, out_x, out_y, out_w, out_h, fill=REPO_COLORS["pet-quantize"])
+    add_text(s, out_x, out_y + 180_000, out_w, 400_000,
+             "EdgeArtifact", size=14, color=WHITE, bold=True,
+             font=FONT_MONO, align=PP_ALIGN.CENTER)
+    add_text(s, out_x, out_y + 580_000, out_w, 380_000,
+             ".rknn / .rkllm\nSHA-256 + RSA sign (optional)", size=9.5, color=WHITE,
+             italic=True, align=PP_ALIGN.CENTER, line_spacing=1.35)
+
+    # Bottom caption
+    add_text(s, 660_000, SLIDE_H.emu - 820_000, SLIDE_W.emu - 1_320_000, 280_000,
+             "缺 SDK 时 cluster-level 精细降级：always-available 永远可用；"
+             "rknn / rkllm 仅失败的那簇跳过（logger.warning + skip），其他正常运行",
+             size=10, color=GRAY_500, italic=True, align=PP_ALIGN.CENTER)
+    add_footer(s, repo="pet-quantize")
+
+
+def slide_quantize_dualmode():
+    s = new_slide()
+    draw_tech_header(s, "pet-quantize",
+                     "pet-quantize · Dual-mode Runner",
+                     "同一类 · 两种初始化 · 被 pet-eval 跨仓引用")
+    # Two side-by-side panels: PC-sim vs on-device
+    panel_w = (SLIDE_W.emu - 1_640_000 - 300_000) // 2
+    panel_h = 3_400_000
+    panel_y = 1_800_000
+    left_x = 820_000
+    right_x = left_x + panel_w + 300_000
+
+    panels = [
+        {
+            "title": "PC 模拟模式",
+            "badge": "dev / CI · 无硬件",
+            "color": BLUE,
+            "init":  "RKLLMRunner(\n    model_path=uri,\n    target=None,\n    device_id=None,\n)",
+            "note":  "PC 端 Python 模拟\n用于 orchestrator / pet-eval\n本地联调 · 不需要 rk3576",
+        },
+        {
+            "title": "端侧 ADB 模式",
+            "badge": "prod · on-device rk3576",
+            "color": AMBER,
+            "init":  "RKLLMRunner(\n    model_path=uri,\n    target=\"rk3576\",\n    device_id=\"ADB_SERIAL\",\n)",
+            "note":  "通过 ADB 桥接真机\n代码不变 · flip 参数即可切换\nPhase 5 硬件接入触发",
+        },
+    ]
+    for i, P in enumerate(panels):
+        x = left_x if i == 0 else right_x
+        add_rect(s, x, panel_y, panel_w, panel_h, fill=WHITE, line=P["color"], line_w=1.2)
+        add_rect(s, x, panel_y, panel_w, 100_000, fill=P["color"])
+        add_text(s, x, panel_y + 200_000, panel_w, 500_000,
+                 P["title"], size=20, color=NAVY, bold=True, align=PP_ALIGN.CENTER)
+        add_text(s, x, panel_y + 750_000, panel_w, 300_000,
+                 P["badge"], size=11, color=P["color"], bold=True, italic=True, align=PP_ALIGN.CENTER)
+        # code init
+        code_y = panel_y + 1_200_000
+        add_rect(s, x + 280_000, code_y, panel_w - 560_000, 1_400_000, fill=GRAY_100)
+        add_text(s, x + 380_000, code_y + 120_000, panel_w - 760_000, 1_200_000,
+                 P["init"], size=11, color=NAVY, font=FONT_MONO, line_spacing=1.15)
+        # note
+        add_text(s, x + 280_000, panel_y + panel_h - 900_000, panel_w - 560_000, 800_000,
+                 P["note"], size=11, color=GRAY_700, italic=True, line_spacing=1.5, align=PP_ALIGN.CENTER)
+
+    # Bottom: cross-repo consumer
+    add_text(s, 660_000, SLIDE_H.emu - 820_000, SLIDE_W.emu - 1_320_000, 280_000,
+             "pet-eval QuantizedVlmEvaluator 通过 lazy `from pet_quantize.inference.rkllm_runner import RKLLMRunner` 跨仓引用；"
+             "硬件到位前即可本地跑通全路径",
+             size=10, color=GRAY_500, italic=True, align=PP_ALIGN.CENTER)
+    add_footer(s, repo="pet-quantize")
+
+
+# ---- pet-ota (2 slides) ----
+
+def slide_ota_tech():
+    s = new_slide()
+    draw_tech_header(s, "pet-ota",
+                     "pet-ota · 发布 + Canary Rollout 技术栈",
+                     "bsdiff4 差分 · boto3/requests 多 backend · durable state · 可选 RSA 签名")
+    techs = [
+        ("bsdiff4",            "二进制 delta 差分更新\n@retry(3) tenacity 大文件 IO flake", BLUE),
+        ("boto3 + STORAGE",    "S3 backend 发布\nURI scheme dispatch (file/s3/http)",       TEAL),
+        ("requests PUT",       "HTTP backend · bearer/basic/no-auth\n自托管服务器",          AMBER),
+        ("SHA-256 manifest",   "每 tarball 校验\nupload 前必过",                             REPO_COLORS["pet-ota"]),
+        ("RSA signing (lazy)", "from pet_quantize.packaging.verify_package\nsoft-fail on ImportError", CORAL),
+        ("Durable FSM state",  "deployments/<id>.json 续跑\n48h observation 崩溃可恢复",     GRAY_700),
+    ]
+    draw_tech_stack_grid(s, 1_800_000, techs, cols=3, card_h=1_550_000, gap=220_000)
+    add_footer(s, repo="pet-ota")
+
+
+def slide_ota_fsm():
+    s = new_slide()
+    draw_tech_header(s, "pet-ota",
+                     "pet-ota · Canary Rollout 5-state FSM",
+                     "Happy path 5 step · 任何 step 失败 → ROLLING_BACK → ROLLED_BACK · resume-from-state")
+    # Happy path states horizontal
+    happy = [
+        ("GATE_CHECK",         "5 checks from params\nmin_dpo / min_days / ...",  BLUE),
+        ("CANARY_DEPLOYING",   "canary_percentage=5%\n首批部署 canary group",        TEAL),
+        ("CANARY_OBSERVING",   "observe=48h\nfailure_rate 监控",                   AMBER),
+        ("FULL_DEPLOYING",     "全量 rollout\n剩余 95% devices",                    REPO_COLORS["pet-ota"]),
+        ("DONE",               "rollout 完成\nmodel in production",                 TEAL),
+    ]
+    state_y = 1_900_000
+    state_w = 1_880_000
+    state_h = 1_100_000
+    gap = 140_000
+    total_w = 5 * state_w + 4 * gap
+    start_x = (SLIDE_W.emu - total_w) // 2
+    state_positions = []
+    for i, (label, sub, color) in enumerate(happy):
+        x = start_x + i * (state_w + gap)
+        state_positions.append((x, state_y, state_w, state_h))
+        add_rect(s, x, state_y, state_w, state_h, fill=WHITE, line=color, line_w=1.5)
+        add_rect(s, x, state_y, state_w, 70_000, fill=color)
+        add_text(s, x, state_y + 160_000, state_w, 420_000,
+                 label, size=11.5, color=NAVY, bold=True, font=FONT_MONO,
+                 align=PP_ALIGN.CENTER)
+        add_text(s, x + 80_000, state_y + 600_000, state_w - 160_000, state_h - 660_000,
+                 sub, size=9.5, color=GRAY_500, align=PP_ALIGN.CENTER, line_spacing=1.4)
+        if i < len(happy) - 1:
+            add_arrow_right(s, x + state_w + 20_000, state_y + state_h // 2 - 80_000,
+                            gap - 40_000, 160_000, color=BLUE)
+
+    # Rollback row (below states 2/3/4)
+    rb_y = state_y + state_h + 1_000_000
+    rb_states = [
+        ("ROLLING_BACK",  "backend.abort()\nrollback_timeout=5min", CORAL),
+        ("ROLLED_BACK",   "status updated\nalert emitted",           GRAY_500),
+    ]
+    # Position under states 3 and 4
+    rb_x_start = state_positions[2][0] + state_w + gap
+    rb_w = state_w
+    for i, (label, sub, color) in enumerate(rb_states):
+        x = rb_x_start + i * (rb_w + gap)
+        add_rect(s, x, rb_y, rb_w, state_h, fill=WHITE, line=color, line_w=1.5)
+        add_rect(s, x, rb_y, rb_w, 70_000, fill=color)
+        add_text(s, x, rb_y + 160_000, rb_w, 420_000,
+                 label, size=11.5, color=NAVY, bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
+        add_text(s, x + 80_000, rb_y + 600_000, rb_w - 160_000, state_h - 660_000,
+                 sub, size=9.5, color=GRAY_500, align=PP_ALIGN.CENTER, line_spacing=1.4)
+
+    # Draw downward rollback-trigger arrows from states 2/3/4 to ROLLING_BACK
+    rb_target_x = rb_x_start + rb_w // 2
+    for trigger_idx in (1, 2, 3):
+        src_x, src_y, w, h = state_positions[trigger_idx]
+        # Short vertical drop with coral color
+        drop_x = src_x + w // 2 - 5_000
+        drop_start_y = src_y + h
+        drop_end_y = rb_y
+        # draw as a thin vertical bar + small arrow
+        add_rect(s, drop_x, drop_start_y + 40_000, 10_000,
+                 drop_end_y - drop_start_y - 80_000, fill=CORAL)
+        # arrowhead triangle
+        arr = new_slide_arrow_head(s, drop_x - 30_000, drop_end_y - 40_000,
+                                   70_000, 60_000, color=CORAL, direction="down")
+
+    # Resume annotation
+    add_rect(s, 660_000, SLIDE_H.emu - 820_000, SLIDE_W.emu - 1_320_000, 380_000,
+             fill=GRAY_100)
+    add_text(s, 820_000, SLIDE_H.emu - 760_000, SLIDE_W.emu - 1_640_000, 300_000,
+             "Resume-from-state · 任一中断状态（canary_deploying / canary_observing / full_deploying）"
+             "都会从 deployments/<id>.json 续跑 · crash / restart 不丢进度",
+             size=10, color=GRAY_700, italic=True, align=PP_ALIGN.CENTER,
+             anchor=MSO_ANCHOR.MIDDLE)
+    add_footer(s, repo="pet-ota")
+
+
+def new_slide_arrow_head(s, x, y, w, h, *, color=BLUE, direction="down"):
+    """Tiny arrow head drawn as a rectangle tip marker."""
+    shape = MSO_SHAPE.DOWN_ARROW if direction == "down" else MSO_SHAPE.RIGHT_ARROW
+    arr = s.shapes.add_shape(shape, Emu(x), Emu(y), Emu(w), Emu(h))
+    arr.fill.solid(); arr.fill.fore_color.rgb = color
+    arr.line.fill.background()
+    arr.shadow.inherit = False
+    return arr
+
+
+# ---- pet-id (2 slides) ----
+
+def slide_id_tech():
+    s = new_slide()
+    draw_tech_header(s, "pet-id",
+                     "pet-id · 独立 CLI 工具 · 核心技术栈",
+                     "spec §5.2 零 pet-* 运行时依赖 · 仅通过 matrix row 做版本对齐")
+    techs = [
+        ("ultralytics YOLOv10",  "pet detector\nCOCO 15=cat, 16=dog",                BLUE),
+        ("torchreid OSNet x0_25", "ReID embedding\n512 dim + L2 normalize",           TEAL),
+        ("sha256(L2-norm f32)",  "content-addressable pet_id\n跨 host 跨 dtype 确定", AMBER),
+        ("Pydantic PetCard",     "独立数据模型\n不在 pet-schema",                     REPO_COLORS["pet-id"]),
+        ("mmpose (optional)",    "[pose] extras\nAP-10K keypoints",                  CORAL),
+        ("transformers Qwen2-VL",  "[narrative] extras\nbehavior 描述",               GRAY_700),
+    ]
+    draw_tech_stack_grid(s, 1_800_000, techs, cols=3, card_h=1_550_000, gap=220_000)
+    add_footer(s, repo="pet-id")
+
+
+def slide_id_flow():
+    s = new_slide()
+    draw_tech_header(s, "pet-id",
+                     "pet-id · Register + Identify 双泳道",
+                     "两条独立流程 · 共享 detector / embedder / 磁盘 library")
+    # Two swimlanes: register (top) + identify (bottom)
+    lane_h = 1_700_000
+    lane_gap = 400_000
+    reg_y = 1_900_000
+    idn_y = reg_y + lane_h + lane_gap
+
+    def draw_lane(y, color, label, badge, stages):
+        # Label
+        add_rect(s, 660_000, y, 1_200_000, lane_h, fill=color)
+        add_text(s, 660_000, y + 280_000, 1_200_000, 400_000,
+                 label, size=18, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+        add_text(s, 660_000, y + 800_000, 1_200_000, 400_000,
+                 badge, size=10, color=WHITE, italic=True, align=PP_ALIGN.CENTER, line_spacing=1.35)
+        # Stages
+        start_x = 660_000 + 1_200_000 + 200_000
+        usable = SLIDE_W.emu - 660_000 - start_x
+        n = len(stages)
+        gap = 120_000
+        box_w = (usable - gap * (n - 1)) // n
+        for i, (lbl, sub) in enumerate(stages):
+            x = start_x + i * (box_w + gap)
+            add_rect(s, x, y, box_w, lane_h, fill=WHITE, line=color, line_w=1.0)
+            add_rect(s, x, y, box_w, 60_000, fill=color)
+            add_text(s, x, y + 180_000, box_w, 400_000,
+                     lbl, size=11, color=NAVY, bold=True,
+                     font=FONT_MONO, align=PP_ALIGN.CENTER)
+            add_text(s, x + 60_000, y + 600_000, box_w - 120_000, lane_h - 660_000,
+                     sub, size=9.5, color=GRAY_500, align=PP_ALIGN.CENTER, line_spacing=1.4)
+            if i < n - 1:
+                add_arrow_right(s, x + box_w + 20_000, y + lane_h // 2 - 80_000,
+                                gap - 40_000, 160_000, color=GRAY_500)
+
+    draw_lane(reg_y, BLUE, "Register", "petid register \n<photo / dir / video>", [
+        ("YOLOv10",    "detect pet bbox"),
+        ("crop",       "largest bbox area"),
+        ("OSNet",      "embed → 512 dim"),
+        ("L2 norm + sha256",   "pet_id[:8]"),
+        ("library.save",  "PetCard +\ncrop + .npy"),
+    ])
+    draw_lane(idn_y, AMBER, "Identify", "petid identify \n<query.jpg>", [
+        ("YOLOv10",         "detect all bbox"),
+        ("crop each",       "per-detection"),
+        ("OSNet embed",     "query vector"),
+        ("library.identify", "cosine max\n≥ threshold"),
+        ("→ result",        "{pet_id, name, score}"),
+    ])
+    add_footer(s, repo="pet-id")
+
+
+# ---- Ecosystem summary (2 slides) ----
+
+def slide_ecosystem_overview():
+    s = new_slide()
+    add_header_bar(s, "生态全景 · 技术联通图",
+                   "pet-schema 契约 + pet-infra 运行时 + 7 流水线仓 + 1 独立工具 · 一图看全",
+                   section_num="§ 生态闭环", accent=NAVY)
+    # 9-repo layout: chain top, pet-infra band, pet-id floater
+    chain = [
+        ("pet-schema",     "Pydantic / Alembic",         REPO_COLORS["pet-schema"]),
+        ("pet-data",       "FFmpeg / SQLite",            REPO_COLORS["pet-data"]),
+        ("pet-annotation", "4 paradigm / Label Studio",  REPO_COLORS["pet-annotation"]),
+        ("pet-train",      "LLaMA-Factory / PEFT",       REPO_COLORS["pet-train"]),
+        ("pet-eval",       "HF / BERTScore / gate",      REPO_COLORS["pet-eval"]),
+        ("pet-quantize",   "RKLLM / RKNN",               REPO_COLORS["pet-quantize"]),
+        ("pet-ota",        "bsdiff4 / canary FSM",       REPO_COLORS["pet-ota"]),
+    ]
+    # Row 1 — chain
+    row_y = 1_900_000
+    box_w = 1_540_000
+    box_h = 1_250_000
+    gap = 120_000
+    total_w = 7 * box_w + 6 * gap
+    start_x = (SLIDE_W.emu - total_w) // 2
+    for i, (name, tech, color) in enumerate(chain):
+        x = start_x + i * (box_w + gap)
+        add_rect(s, x, row_y, box_w, box_h, fill=WHITE, line=color, line_w=1.2)
+        add_rect(s, x, row_y, box_w, 70_000, fill=color)
+        add_text(s, x, row_y + 170_000, box_w, 360_000,
+                 name, size=11, color=color, bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
+        add_text(s, x + 60_000, row_y + 600_000, box_w - 120_000, box_h - 650_000,
+                 tech, size=9, color=GRAY_700, align=PP_ALIGN.CENTER, line_spacing=1.4)
+        # ModelCard arrow between
+        if i < len(chain) - 1:
+            add_arrow_right(s, x + box_w + 10_000, row_y + box_h // 2 - 70_000,
+                            gap - 20_000, 140_000, color=GRAY_500)
+
+    # pet-infra band (shared runtime)
+    infra_y = row_y + box_h + 260_000
+    infra_color = REPO_COLORS["pet-infra"]
+    add_rect(s, start_x, infra_y, total_w, 550_000, fill=infra_color)
+    add_text(s, start_x, infra_y + 90_000, total_w, 400_000,
+             "pet-infra · shared runtime",
+             size=13, color=WHITE, bold=True, font=FONT_MONO, align=PP_ALIGN.CENTER)
+    add_text(s, start_x, infra_y + 350_000, total_w, 250_000,
+             "mmengine Registry · Hydra compose · networkx DAG · ClearML · entry_points 发现",
+             size=10, color=GRAY_300, italic=True, align=PP_ALIGN.CENTER)
+    # Vertical connectors from chain to infra band
+    for i in range(len(chain)):
+        x = start_x + i * (box_w + gap) + box_w // 2 - 5_000
+        add_rect(s, x, row_y + box_h, 10_000, infra_y - row_y - box_h,
+                 fill=infra_color)
+
+    # pet-id independent chip
+    pid_y = infra_y + 720_000
+    pid_color = REPO_COLORS["pet-id"]
+    pid_w = 3_600_000
+    pid_x = (SLIDE_W.emu - pid_w) // 2
+    add_rect(s, pid_x, pid_y, pid_w, 540_000, fill=WHITE, line=pid_color, line_w=1.5)
+    add_rect(s, pid_x, pid_y, 80_000, 540_000, fill=pid_color)
+    add_text(s, pid_x + 160_000, pid_y + 80_000, pid_w - 320_000, 300_000,
+             "pet-id · 独立 CLI 工具", size=13, color=pid_color, bold=True, font=FONT_MONO)
+    add_text(s, pid_x + 160_000, pid_y + 280_000, pid_w - 320_000, 240_000,
+             "YOLOv10 · torchreid OSNet · sha256 content-address · 零 pet-* 运行时依赖",
+             size=9.5, color=GRAY_700, italic=True)
+
+    # Legend at bottom
+    add_text(s, 660_000, SLIDE_H.emu - 600_000, SLIDE_W.emu - 1_320_000, 280_000,
+             "箭头 = ModelCard 契约逐级传递 · 垂直连线 = pet-infra runtime 贯穿 7 仓 · "
+             "下沿独立 chip = pet-id（不参与 pipeline 主链，仅 matrix 登记）",
+             size=10, color=GRAY_500, italic=True, align=PP_ALIGN.CENTER)
+    add_footer(s)
+
+
+def slide_ecosystem_principles():
+    s = new_slide()
+    add_header_bar(s, "设计哲学 · 为什么这套架构能闭环",
+                   "5 条共通原则 · 覆盖依赖 / 发现 / 确定性 / 硬件 / 契约",
+                   section_num="§ 生态原则", accent=NAVY)
+    principles = [
+        {
+            "num": "01",
+            "name": "契约单一真理源",
+            "tech": "pet-schema (Pydantic + Alembic)",
+            "body": "所有跨仓类型住在一个仓；\n8 仓 import pet_schema 即得；\n链首零上游 → 不会版本协商地狱",
+            "color": BLUE,
+        },
+        {
+            "num": "02",
+            "name": "β peer-dep 依赖松耦合",
+            "tech": "pet-infra runtime 贯穿",
+            "body": "不放 pyproject.dependencies；\nCI step 1 显式装 matrix pin；\n一处 bump 不扩散 7 个下游 diff",
+            "color": TEAL,
+        },
+        {
+            "num": "03",
+            "name": "Registry + @register_module",
+            "tech": "7 registries + entry_points 发现",
+            "body": "每仓 plugin 装即注册；\norchestrator registry.build(type);\n新增 plugin 无需改 pet-infra",
+            "color": AMBER,
+        },
+        {
+            "num": "04",
+            "name": "内容寻址确定性",
+            "tech": "sha256(config) · sha256(embedding)",
+            "body": "stage_config_sha / card_id / pet_id；\n跨 host 跨 dtype 同输入 → 同输出；\nresume-from-cache + migration-safe",
+            "color": REPO_COLORS["pet-quantize"],
+        },
+        {
+            "num": "05",
+            "name": "Dual-mode hardware",
+            "tech": "PC sim ↔ on-device ADB",
+            "body": "RKLLMRunner / RKNNRunner 单一 class；\ntarget=None 本地；target+device_id 真机；\n硬件未到位即可全路径联调",
+            "color": CORAL,
+        },
+    ]
+    # 5 cards in single row (tight)
+    start_y = 1_900_000
+    card_w = (SLIDE_W.emu - 1_320_000 - 4 * 200_000) // 5
+    card_h = 3_800_000
+    gap = 200_000
+    start_x = 660_000
+    for i, p in enumerate(principles):
+        x = start_x + i * (card_w + gap)
+        add_rect(s, x, start_y, card_w, card_h, fill=WHITE, line=GRAY_300, line_w=0.75)
+        add_rect(s, x, start_y, card_w, 100_000, fill=p["color"])
+        # Big number
+        add_text(s, x + 200_000, start_y + 220_000, card_w - 400_000, 500_000,
+                 p["num"], size=30, color=p["color"], bold=True, font=FONT_MONO)
+        # Name
+        add_text(s, x + 200_000, start_y + 820_000, card_w - 400_000, 520_000,
+                 p["name"], size=14, color=NAVY, bold=True, line_spacing=1.25)
+        # Tech signature
+        add_text(s, x + 200_000, start_y + 1_440_000, card_w - 400_000, 440_000,
+                 p["tech"], size=9.5, color=p["color"], italic=True, bold=True, font=FONT_MONO, line_spacing=1.35)
+        # Body
+        add_text(s, x + 200_000, start_y + 2_000_000, card_w - 400_000, card_h - 2_100_000,
+                 p["body"], size=10.5, color=GRAY_700, line_spacing=1.55)
+    add_footer(s)
 
 
 # ============================================================================
@@ -1143,484 +2208,48 @@ slide_version_matrix()
 
 # ---- Section A: Contract + Runtime ----
 
-slide_section_divider("A", "契约与运行时", "pet-schema · pet-infra", "Slides 6 – 11")
+slide_section_divider("A", "契约与运行时", "pet-schema · pet-infra")
+slide_schema_tech()
+slide_schema_flow()
+slide_infra_tech()
+slide_infra_flow()
+slide_infra_registries()
 
-# pet-schema
-slide_repo_intro(
-    "pet-schema", "§1 · pet-schema (1/3)", "pet-schema — 契约单一真理源",
-    "整个生态的 chain head：所有跨仓数据类型 / 验证规则 / 迁移文件的权威出处",
-    does=[
-        ("Pydantic v2 数据模型", "Sample / Annotation / ModelCard / ExperimentRecipe / Metric"),
-        ("Alembic 数据库迁移", "历史文件 immutable，只能追加新文件"),
-        ("SCHEMA_VERSION 常量", "pyproject.toml parity-checked"),
-        ("HuggingFace datasets.Features 适配器", "adapters/hf_features.py"),
-        ("VLM JSON 运行时校验", "validator.py + SFT/DPO JSONL 契约"),
-    ],
-    does_not=[
-        ("业务逻辑", "训练循环 / 推理 / 标注路由在各下游"),
-        ("I/O 操作", "下游通过 store.py，不直连 DB"),
-        ("插件注册表", "住在 pet-infra"),
-        ("pet-id PetCard", "pet-id 有自己的独立 registry"),
-    ],
-    page=6,
-)
+# ---- Section B: Data + Annotation ----
 
-slide_repo_modules(
-    "pet-schema", "§1 · pet-schema (2/3)", "pet-schema — 核心模块",
-    "5 个域模型 + 验证器 + 迁移，全部 extra='forbid'",
-    modules=[
-        ("训练契约", [
-            ("Sample", "VisionSample / AudioSample\n多模态采样帧"),
-            ("SFTSample / ShareGPTSFTSample", "LLaMA-Factory JSONL 契约"),
-            ("DPOSample", "preference alignment 对"),
-        ]),
-        ("编排 + 产物", [
-            ("ExperimentRecipe", "Hydra composable recipe\nstages + variations"),
-            ("ModelCard", "训练 → eval → quantize → ota\n全链 artifact 元数据"),
-            ("EdgeArtifact + QuantConfig", "on-device 产物"),
-        ]),
-        ("运行时", [
-            ("validator.py", "VLM JSON schema 合规检查"),
-            ("render_prompt", "train / infer 同源 prompt"),
-            ("Alembic migrations/", "DB schema 演化\n历史 immutable"),
-        ]),
-    ],
-    page=7,
-)
+slide_section_divider("B", "数据流", "pet-data · pet-annotation")
+slide_data_tech()
+slide_data_flow()
+slide_annotation_tech()
+slide_annotation_flow()
 
-slide_repo_design(
-    "pet-schema", "§1 · pet-schema (3/3)", "pet-schema — 关键设计决策",
-    "为什么是链头，为什么 Alembic 历史 immutable",
-    designs=[
-        ("零 pet-* 上游依赖\nchain head 地位",
-         "失去 SSOT — 任何下游可以擅自定义重复的 ModelCard，\n8 仓分别维护契约 → 版本协商地狱"),
-        ("Alembic 历史文件 immutable\n只允许追加",
-         "失去生产 DB 可重放性 — 修旧 migration 会让历史 deploy\n无法 replay，debug 不了过往数据损坏"),
-        ("extra='forbid' 严格校验\nstrict=True pydantic",
-         "拒绝未知字段 = 早失败。宽松模式会让下游\n默默累积未验证字段，运行时惊吓"),
-    ],
-    page=8,
-)
+# ---- Section C: Train + Eval ----
 
-# pet-infra
-slide_repo_intro(
-    "pet-infra", "§2 · pet-infra (1/3)", "pet-infra — 共享运行时",
-    "7 个 registry + plugin discovery + compose + orchestrator + storage + replay + CLI",
-    does=[
-        ("7 个全局 Registry", "TRAINERS / EVALUATORS / CONVERTERS / METRICS / DATASETS / STORAGE / OTA"),
-        ("Plugin Discovery", "entry-point group: pet_infra.plugins"),
-        ("Config Composition", "compose_recipe() Hydra defaults-list + override"),
-        ("Orchestrator", "BaseStageRunner + 5 runners · pet_run()"),
-        ("Storage 抽象", "Local / S3 / HTTP 三后端"),
-        ("ClearMLLogger + Replay", "W&B 已于 Phase 4 完全移除"),
-    ],
-    does_not=[
-        ("不实现具体 trainer / evaluator", "下游仓注册为 plugin"),
-        ("不定义契约类型", "pet-schema 负责"),
-        ("不做硬件推理", "pet-quantize 负责"),
-        ("不保存训练数据", "pet-data 负责"),
-    ],
-    page=9,
-)
-
-slide_repo_modules(
-    "pet-infra", "§2 · pet-infra (2/3)", "pet-infra — 7 Registries + 编排",
-    "所有下游仓通过 entry-point 注册 · DAG 驱动 · ClearML 唯一 tracker",
-    modules=[
-        ("注册表层", [
-            ("TRAINERS", "llamafactory_sft / dpo / tiny_test"),
-            ("EVALUATORS / METRICS", "8 metrics + 6 evaluators\n(vlm/audio/quantized + 3 fusion)"),
-            ("CONVERTERS / DATASETS", "4 + 3 plugins\npet-quantize"),
-            ("OTA / STORAGE", "local / s3 / http\n共用 STORAGE schema"),
-        ]),
-        ("编排层", [
-            ("compose.py", "compose_recipe()\nHydra + override"),
-            ("orchestrator/", "BaseStageRunner\nDAG 执行器"),
-            ("pet_run()", "串行 stage 执行\nResume-from-cache"),
-            ("replay.py", "ModelCard 确定性重放"),
-        ]),
-        ("基础设施", [
-            ("storage/", "Local + S3 + HTTP\nURI scheme dispatch"),
-            ("ClearMLLogger", "唯一实验追踪"),
-            ("cli.py", "pet run / replay / sweep"),
-            ("registry.py", "mmengine Registry 基座"),
-        ]),
-    ],
-    page=10,
-)
-
-slide_repo_design(
-    "pet-infra", "§2 · pet-infra (3/3)", "pet-infra — 关键设计决策",
-    "peer-dep 模式 · cross-repo-smoke-install CI 契约",
-    designs=[
-        ("β peer-dep 模式\n(非 pyproject.dependencies)",
-         "失去 CI / dev 装序清晰 — hardpin 会把 pet-infra\n每次 bump 扩散到 7 个下游 pyproject diff"),
-        ("cross-repo-smoke-install.yml\n装序矩阵 = 实际行为",
-         "失去「文档 = 实际」契约 — OVERVIEW §4 装序表\n会悄悄和各仓 CI 漂移，Phase-N 再发现"),
-        ("ClearML 单一 tracker\nno-wandb-residue guard",
-         "失去「一套日志工具」确定性 — W&B 加回来就要\n同步 6 仓的 config + logger 抽象"),
-    ],
-    page=11,
-)
-
-# ---- Section B: Data Pipeline ----
-
-slide_section_divider("B", "数据流", "pet-data · pet-annotation", "Slides 13 – 16")
-
-# pet-data
-slide_repo_intro(
-    "pet-data", "§3 · pet-data (1/2)", "pet-data — 数据采集 + 清洗",
-    "7 个 ingester · dedup · quality filter · anomaly scoring · SQLite store",
-    does=[
-        ("7 种 Ingester", "youtube / community / selfshot / mock / ..."),
-        ("Dedup + QualityFilter", "相似度 + 模糊 + 亮度三联闸"),
-        ("Anomaly Scoring", "弱监督打分 → 标注任务优先级"),
-        ("SQLite Store", "frames + audio_samples 两表\nAlembic 004 migration"),
-        ("DATASETS plugin", "VisionSample / AudioSample export"),
-    ],
-    does_not=[
-        ("不做结构化标注", "pet-annotation 负责"),
-        ("不训练", "pet-train 负责"),
-        ("不 skip dedup", "feedback_no_manual_workaround 铁律"),
-        ("不直连 DB", "只通过 store.py"),
-    ],
-    page=13,
-)
-
-slide_repo_design(
-    "pet-data", "§3 · pet-data (2/2)", "pet-data — 关键设计决策",
-    "概念分离 · immutable migrations · 不跳 dedup",
-    designs=[
-        ("ingester_name (类名) vs\ndefault_provenance (语义)",
-         "Phase 3 生态优化抽出。合并会让 CommunityIngester 默认打\nprovenance=community，SelfshotIngester 继承后变 selfshot,\n混编历史数据的 provenance 永远错"),
-        ("dedup 强制执行\n不给 skip 旗标",
-         "失去数据质量底线 — 重复帧流入标注会被打多次\n（钱浪费）+ 训练集偏斜"),
-        ("Alembic 004 migration 路径\n历史不变只加",
-         "生产 DB 的 schema 演化可追溯 + downgrade/upgrade 可重放\n删旧 migration 会让过去的 deploy 无法恢复"),
-    ],
-    page=14,
-)
-
-# pet-annotation
-slide_repo_intro(
-    "pet-annotation", "§4 · pet-annotation (1/2)", "pet-annotation — 4 范式打标引擎",
-    "LLM / classifier / rule / human 并行打标 · SFT/DPO JSONL 导出",
-    does=[
-        ("拉 pending targets", "从 pet-data frames 表只读"),
-        ("4 范式并行打标", "LLM + classifier + rule + human"),
-        ("AnnotationOrchestrator", "并发调度 (target × annotator) 组合"),
-        ("写 4 范式各自表", "每 annotator 独立列不融合"),
-        ("export SFT/DPO JSONL", "sft_dpo.py → pet-train 消费"),
-        ("Label Studio 1.23 integration", "session auth + import/export"),
-    ],
-    does_not=[
-        ("不 ingest 原始数据", "pet-data 负责"),
-        ("不训练模型", "pet-train 负责"),
-        ("不写 pet-data DB", "只读跨仓"),
-        ("不跨 annotator reconcile", "D4 决策：独立存储"),
-    ],
-    page=15,
-)
-
-slide_repo_design(
-    "pet-annotation", "§4 · pet-annotation (2/2)", "pet-annotation — 关键设计决策",
-    "4 范式独立存 · α 导出 · producer-side 校验",
-    designs=[
-        ("4 annotator 各写各表\n不做 majority-vote 融合",
-         "失去真值集构建灵活度 — 融合策略应属评估阶段\n而不是固化在数据层。未来 voting / bayesian fusion\n可以上层做，下层保留原始数据是前提"),
-        ("α 方向导出\n重写为 LLaMA-Factory JSONL",
-         "Phase 5 决策：pet-annotation 内部不做 backward compat shim\n消费方 pet-train 直接用 LlamaFactory run_sft/run_dpo 契约"),
-        ("F11 producer-side validator\n导出前 DPOSample.model_validate()",
-         "失去与下游 consumer (pet-train) 的验证冗余 —\n分工契约是「双端都验」，单端跳过坏数据流到训练"),
-    ],
-    page=16,
-)
-
-# ---- Section C: Training + Eval ----
-
-slide_section_divider("C", "训练与评估", "pet-train · pet-eval", "Slides 18 – 23")
-
-# pet-train
-slide_repo_intro(
-    "pet-train", "§5 · pet-train (1/3)", "pet-train — 训练引擎",
-    "3 trainer 插件 + audio PANNs · 输出 ModelCard 给下游",
-    does=[
-        ("llamafactory_sft", "VLM SFT fine-tuning (LoRA)"),
-        ("llamafactory_dpo", "preference alignment (pref_beta=0.1)"),
-        ("tiny_test", "CPU-only smoke (< 2min)"),
-        ("PANNs audio", "MobileNetV2AudioSet + AudioInference\n被 pet-eval 跨仓 import"),
-        ("F11 consumer validator", "SFT/DPO JSONL 训练前校验"),
-        ("ModelCard output", "checkpoint_uri + 运行时 metrics"),
-    ],
-    does_not=[
-        ("不标注数据", "pet-annotation 负责"),
-        ("不评估 gate", "pet-eval 负责"),
-        ("不转换端侧格式", "pet-quantize 负责"),
-        ("不维护 LLaMA-Factory 上游", "vendor 只冻结 v0.9.4"),
-    ],
-    page=18,
-)
-
-slide_repo_modules(
-    "pet-train", "§5 · pet-train (2/3)", "pet-train — 核心模块",
-    "vendor/LLaMA-Factory@v0.9.4 · lazy import 屏蔽上游脆弱",
-    modules=[
-        ("Trainer Plugins", [
-            ("llamafactory_sft", "run_sft 包装\nlora_r/alpha/lr from params"),
-            ("llamafactory_dpo", "run_dpo 包装\npref_beta + sft_adapter_path"),
-            ("tiny_test", "CPU 2min smoke\nPR-gate 验证"),
-        ]),
-        ("Audio 子系统", [
-            ("MobileNetV2AudioSet", "PANNs 527 class head\nhardcoded (不可改)"),
-            ("AudioInference", "zero-shot classification\n5 类 → eating/drinking/..."),
-            ("from_params", "factory · 所有数值\n从 params.yaml 读"),
-        ]),
-        ("数据 + 契约", [
-            ("data_validation.py", "validate_sft_jsonl\nvalidate_dpo_jsonl F11"),
-            ("Lazy run_sft import", "module-load 不拉\nllamafactory (脆弱)"),
-            ("_register.py", "β dual guard\n+ fail-fast"),
-        ]),
-    ],
-    page=19,
-    notes="vendored LLaMA-Factory：git clone 即有，无需 submodule update；NOTICE 记录 Apache-2.0 来源",
-)
-
-slide_repo_design(
-    "pet-train", "§5 · pet-train (3/3)", "pet-train — 关键设计决策",
-    "vendor / lazy import / num_classes=527 / JSONL 后缀校验",
-    designs=[
-        ("LLaMA-Factory plain-directory vendor\n(不做 submodule)",
-         "git clone + git pull 即完整可跑。submodule 要\nrecursive update 每步都有人忘 → CI 红。NOTICE\n记 Apache-2.0 attribution"),
-        ("num_classes=527 硬编码\ndocstring 显式警告",
-         "PANNs AudioSet 固定 527 类 taxonomy。改这数就导致\n模型 load_state_dict 形状不匹配。从 params 传会\n让运维默默 load 一个随机初始化 head，静默退化"),
-        ("JSONL validator 只校 .jsonl 后缀\n非 .jsonl 静默通过",
-         "未来 Parquet / Arrow 是合理演进 —— 到时候给新格式\n注册新 validator。现在强制 .jsonl 会挡住所有新格式"),
-    ],
-    page=20,
-)
-
-# pet-eval
-slide_repo_intro(
-    "pet-eval", "§6 · pet-eval (1/3)", "pet-eval — 评估 + gate",
-    "8 metrics + 6 evaluators (3 primary + 3 fusion) · rule-based only",
-    does=[
-        ("8 metrics", "schema / anomaly / mood / narrative\nlatency / audio / kl / calibration"),
-        ("VLMEvaluator", "LoRA adapter merge + gold set"),
-        ("AudioEvaluator", "跨仓 import pet_train.audio"),
-        ("QuantizedVlmEvaluator", "跨仓 import pet_quantize.rkllm_runner"),
-        ("3 rule-based fusion", "single_modal / and_gate / weighted"),
-        ("apply_gate(min_*/max_*)", "通过/失败 + reason"),
-    ],
-    does_not=[
-        ("不训练 checkpoint", "pet-train 负责"),
-        ("不量化转换", "pet-quantize 负责"),
-        ("不做 learned fusion", "feedback_no_learned_fusion"),
-        ("不做实验 tracking", "orchestrator + ClearMLLogger"),
-    ],
-    page=21,
-)
-
-slide_repo_modules(
-    "pet-eval", "§6 · pet-eval (2/3)", "pet-eval — Registry 全景",
-    "METRICS × 8 + EVALUATORS × 6 · 所有通过 @register_module 装饰注册",
-    modules=[
-        ("Metrics (8)", [
-            ("schema_compliance", "VLM JSON 合规率 + 分布和差"),
-            ("anomaly_recall", "异常召回 + FPR"),
-            ("mood_correlation", "mood_spearman 3 维"),
-            ("narrative_quality", "BERTScore F1 (Chinese)"),
-            ("latency / audio / kl / calibration", "P95 / accuracy / KL / ECE"),
-        ]),
-        ("Primary Evaluators (3)", [
-            ("vlm_evaluator", "LoRA merge + gold set inference"),
-            ("audio_evaluator", "classify 5 class via pet_train"),
-            ("quantized_vlm_evaluator", "RKLLMRunner lifecycle\ninit/generate/release"),
-        ]),
-        ("Fusion Evaluators (3)", [
-            ("single_modal_fusion", "pass-through"),
-            ("and_gate_fusion", "全 ≥ threshold\n否则 0"),
-            ("weighted_fusion", "normalized weighted sum"),
-        ]),
-    ],
-    page=22,
-)
-
-slide_repo_design(
-    "pet-eval", "§6 · pet-eval (3/3)", "pet-eval — 关键设计决策",
-    "_FALLBACK_OUTPUT / 双 prompt_source / 跨仓 lazy import",
-    designs=[
-        ("_FALLBACK_OUTPUT 50-line\n硬编码安全 JSON",
-         "retry_on_failure=true 且重试仍无效时 emit。\n换 None 会让所有 metric 都要 null 分支;\n换 skip 会让合规率分母错"),
-        ("prompt_source: 'gold_set' | 'pet_schema'\n双轨支持",
-         "sft_v2 embeds full prompt in gold records;\nsft_v3+ 用 pet_schema.render_prompt 的短 prompt。\n两代模型都要能评估"),
-        ("跨仓 runtime import\npet_train.audio / pet_quantize.rkllm",
-         "AudioEvaluator / QuantizedVlmEvaluator 真正\n要跑这些。复制契约到 pet-eval 会违反 SSOT。\n导入 lazy 防 module-load 拉 SDK"),
-    ],
-    page=23,
-)
+slide_section_divider("C", "训练与评估", "pet-train · pet-eval")
+slide_train_tech()
+slide_train_flow()
+slide_eval_tech()
+slide_eval_flow()
 
 # ---- Section D: Edge + Delivery ----
 
-slide_section_divider("D", "端侧与发布", "pet-quantize · pet-ota", "Slides 25 – 30")
-
-# pet-quantize
-slide_repo_intro(
-    "pet-quantize", "§7 · pet-quantize (1/3)", "pet-quantize — 量化 + 打包签名",
-    "4 CONVERTERS + 3 DATASETS + 2 dual-mode inference runners",
-    does=[
-        ("vlm_rkllm_w4a16", "VLM → RKLLM W4A16 for RK3576"),
-        ("audio_rknn_fp16", "audio CNN → RKNN FP16"),
-        ("vision_rknn_fp16", "ViT → RKNN FP16"),
-        ("noop_converter", "零 SDK CI smoke"),
-        ("3 calibration DATASETS", "content-addressed cache"),
-        ("RKLLMRunner / RKNNRunner", "PC sim ↔ on-device ADB dual-mode"),
-        ("packaging: tarball + manifest + sign", "SHA-256 + 可选签名"),
-    ],
-    does_not=[
-        ("不训练", "pet-train 负责"),
-        ("不做 gate 决策", "pet-eval 负责"),
-        ("不发布到设备", "pet-ota 负责"),
-        ("不强制装 RK SDK", "PET_ALLOW_MISSING_SDK=1 逃生"),
-    ],
-    page=25,
-)
-
-slide_repo_modules(
-    "pet-quantize", "§7 · pet-quantize (2/3)", "pet-quantize — SDK-gated cluster 图",
-    "rknn / rkllm 两个 SDK 簇 + noop always-available",
-    modules=[
-        ("Always-available", [
-            ("noop_converter", "零 SDK · CI smoke\n产确定性 fake EdgeArtifact"),
-            ("PET_ALLOW_MISSING_SDK=1", "逃生旗标 · CI / dev 默认开\n缺 SDK → logger.warning 跳过"),
-            ("entry-point 注册", "pet_infra.plugins.pet_quantize\n被 orchestrator 发现"),
-        ]),
-        ("rknn cluster", [
-            ("audio_rknn_fp16", "FP16 · 无需 calib"),
-            ("vision_rknn_fp16", "FP16 opt_level=3\n输出 ONNX + RKNN"),
-            ("audio/vision calibration_subset", "DATASETS\n采样帧 → calib tensor"),
-        ]),
-        ("rkllm cluster", [
-            ("vlm_rkllm_w4a16", "W4A16 · 需 calib batch"),
-            ("vlm_calibration_subset", "DATASETS\n(num_samples, 2048) int64"),
-            ("RKLLMRunner", "init/generate/release\n被 pet-eval 跨仓引用"),
-        ]),
-    ],
-    page=26,
-    notes="register_all: try/except ImportError → re-raise UNLESS PET_ALLOW_MISSING_SDK=1 → logger.warning + skip cluster",
-)
-
-slide_repo_design(
-    "pet-quantize", "§7 · pet-quantize (3/3)", "pet-quantize — 关键设计决策",
-    "SDK cluster · dual-mode · content-addressable cache",
-    designs=[
-        ("SDK-gated cluster + 逃生旗标\nPET_ALLOW_MISSING_SDK=1",
-         "Rockchip vendor wheels 不在 PyPI。强制装会破\n所有非 vendor 环境；强制跳会让 mock 蔓延。\ncluster 按 SDK 分组精细降级"),
-        ("RKLLMRunner 双模\n(PC simulated ↔ ADB on-device)",
-         "硬件未到 CI 前，pet-eval 的 quantized_vlm_evaluator\n就能本地走通全路径。硬件接入时 flip target+device_id\n代码不变"),
-        ("DATASETS cache key\nsha256(modality|source_uri|num_samples)",
-         "orchestrator resume-from-cache 依赖确定性 card_id。\n带时间戳的文件名会让 stage_config_sha 每次漂。\ncache 命中 = 几分钟 vs 几小时"),
-    ],
-    page=27,
-)
-
-# pet-ota
-slide_repo_intro(
-    "pet-ota", "§8 · pet-ota (1/3)", "pet-ota — 发布 + canary rollout",
-    "3 OTA backends + 5-state FSM · resume-from-state · optional signing",
-    does=[
-        ("local / s3 / http backends", "3 个 OTA registry plugins"),
-        ("canary_rollout FSM", "5 states · 48h observation window"),
-        ("resume-from-state", "deployments/<id>.json 续跑"),
-        ("manifest SHA-256 verify", "每 tarball 校验"),
-        ("bsdiff4 delta + tenacity retry", "大文件 IO flake 3 次重试"),
-        ("monitoring + alert", "update_rate + alert hook"),
-        ("optional signing", "lazy import pet_quantize.verify"),
-    ],
-    does_not=[
-        ("不量化转换", "pet-quantize 负责"),
-        ("不签名", "signing optional · 缺 pet-quantize 软降级"),
-        ("不做实验 tracking", "orchestrator 负责"),
-        ("不 depend on RK SDK", "pet-ota 纯 Python"),
-    ],
-    page=28,
-)
-
-slide_repo_modules(
-    "pet-ota", "§8 · pet-ota (2/3)", "pet-ota — Canary rollout 5-state FSM",
-    "两套 backend 共存: OTA registry plugin (artifact) + LocalBackend (stateful)",
-    modules=[
-        ("OTA Registry Plugins", [
-            ("local_backend", "shutil.copy2 + manifest.json"),
-            ("s3_backend", "boto3 + STORAGE registry\n(file/local/s3/http source)"),
-            ("http_backend", "PUT + bearer/basic/no-auth"),
-        ]),
-        ("Canary FSM", [
-            ("gate_check", "5 checks · eval_passed\ndpo_pairs ≥ min_* from params"),
-            ("canary_deploying/observing", "canary_percentage=5%\nobserve=48h"),
-            ("full_deploying / rolling_back", "rollback_timeout=5min\nfailure_rate=0.10"),
-        ]),
-        ("Packaging + Monitoring", [
-            ("make_delta.py", "bsdiff4 + tenacity retry(3)"),
-            ("upload_artifact.py", "SHA-256 verify\nlazy pet_quantize signing"),
-            ("check_update_rate", "device pending timeout"),
-        ]),
-    ],
-    page=29,
-    notes="legacy backend/LocalBackend (stateful) 驱动 FSM; plugins/backends/LocalBackendPlugin 做 artifact 发布。职责不重叠",
-)
-
-slide_repo_design(
-    "pet-ota", "§8 · pet-ota (3/3)", "pet-ota — 关键设计决策",
-    "双 backend · resume-from-state · bsdiff4 retry",
-    designs=[
-        ("两套 backend surface 共存",
-         "registry plugin = artifact 发布；legacy LocalBackend =\nstateful deployment orchestration。合并会把\ndeployment 生命周期拖进 OTA registry，耦合大无收益"),
-        ("canary resume-from-state\ndeployments/<id>.json 续跑",
-         "canary_observe_hours=48 默认。crash 后不续跑\n会把观察进度清零 + 可能双发设备。\ndurable FSM 是 rollout 安全前提"),
-        ("bsdiff4 tenacity retry(3, 1s)\nreraise=True",
-         "大 tarball (几百 MB) 经常 OOM/IO flaky。\n3 次重试从真实 incident 校准，不是 defensive slop。\nreraise 保留 bsdiff4 原 error stack"),
-    ],
-    page=30,
-)
+slide_section_divider("D", "端侧与发布", "pet-quantize · pet-ota")
+slide_quantize_tech()
+slide_quantize_flow()
+slide_quantize_dualmode()
+slide_ota_tech()
+slide_ota_fsm()
 
 # ---- Section E: Independent Tool ----
 
-slide_section_divider("E", "独立工具", "pet-id", "Slides 32 – 33")
+slide_section_divider("E", "独立工具", "pet-id")
+slide_id_tech()
+slide_id_flow()
 
-# pet-id
-slide_repo_intro(
-    "pet-id", "§9 · pet-id (1/2)", "pet-id — 独立 CLI 工具",
-    "零 pet-* 运行时依赖 (spec §5.2) · PetCard registry + petid CLI",
-    does=[
-        ("petid register", "photo / dir / video → PetCard"),
-        ("petid identify", "query image → pet_id / name"),
-        ("petid list / show / delete", "gallery CRUD"),
-        ("purrai_core 算法核心", "detector / reid / pose\nnarrative / tracker 5 backends"),
-        ("PetCard (Pydantic)", "独立 model · 不在 pet-schema"),
-        ("content-addressable pet_id", "sha256(L2-normed f32)[:8]"),
-    ],
-    does_not=[
-        ("不 import 任何 pet-* 包", "grep -rn 'from pet_' src/ → 0 hits"),
-        ("不是 pet-infra plugin", "无 entry-point 注册"),
-        ("不做硬件部署", "pet-id 纯 host-side"),
-        ("不入 matrix 装序", "仅入 matrix 做版本对齐报告"),
-    ],
-    page=32,
-)
+# ---- Ecosystem summary — closes the technical narrative ----
 
-slide_repo_design(
-    "pet-id", "§9 · pet-id (2/2)", "pet-id — 关键设计决策",
-    "两包分层 · 5 extras · 独立性 · content-addressable id",
-    designs=[
-        ("pet_id_registry + purrai_core\n两包分层 (不合成单包)",
-         "purrai_core 从 pet-demo/core 引导；可独立复用给\n未来其他 CLI。合成单包会强迫消费纯算法的用户\n连带 CLI + 磁盘 gallery"),
-        ("5 extras + meta `all`\n(detector/reid/pose/narrative/tracker)",
-         "每 backend 百 MB 级 ML 依赖。只用 register/identify\n的用户 pip install pet-id[detector,reid] ~500MB\n装全 5 GB+"),
-        ("compute_pet_id L2-normalize assert\n+ little-endian float32 canonicalize",
-         "跨 host (amd64/arm64) 跨 dtype (fp16/fp32) 同一\nembedding → 同一 pet_id。否则 registry migration\n时 id 飘，调试地狱"),
-    ],
-    page=33,
-)
+slide_ecosystem_overview()
+slide_ecosystem_principles()
 
 # ---- Section F: Cross-cutting ----
 

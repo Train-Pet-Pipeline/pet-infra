@@ -35,6 +35,9 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${{ secrets.CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
+      - name: Install PyYAML for matrix parsing
+        run: pip install --disable-pip-version-check pyyaml
+
       - name: Parse compatibility_matrix.yaml and emit env vars
         id: parse_matrix
         run: |
@@ -69,6 +72,20 @@ jobs:
         run: |
           pip install "pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v${PET_INFRA}"
 
+      # pet-eval declares pet-train + pet-quantize as runtime deps in its
+      # pyproject (without git URLs, so pip would try PyPI and fail). Preinstall
+      # them from git at the matrix-pinned versions before pet-eval's own second
+      # pass resolves dev extras — mirrors pet-eval's own 6-step CI order.
+      - name: Install pet-train peer dependency (pet-eval only)
+        if: matrix.repo == 'pet-eval'
+        run: |
+          pip install "pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v${PET_TRAIN}"
+
+      - name: Install pet-quantize peer dependency (pet-eval only)
+        if: matrix.repo == 'pet-eval'
+        run: |
+          pip install "pet-quantize @ git+https://github.com/Train-Pet-Pipeline/pet-quantize@v${PET_QUANTIZE}"
+
       - name: Install target repo at matrix-pinned version (--no-deps)
         run: |
           REPO_KEY=$(echo "${{ matrix.repo }}" | tr '-' '_' | tr '[:lower:]' '[:upper:]')
@@ -87,26 +104,50 @@ jobs:
           echo "Resolving third-party extras for ${{ matrix.repo }} at v${VER}"
           pip install "${{ matrix.repo }} @ git+https://github.com/Train-Pet-Pipeline/${{ matrix.repo }}@v${VER}"
 
-      - name: Assert installed version matches matrix pin
+      # After the second pass, pet-train's transitive deps can down-grade
+      # pet-schema / pet-infra (pip's resolver doesn't honor the pre-install
+      # pins for same-name packages). Re-pin last-wins to the matrix versions
+      # before asserting — same trick pet-eval's own CI uses in its Step 7.
+      - name: Re-pin pet-schema + pet-infra to matrix values (last-wins)
+        if: matrix.repo != 'pet-id'
         run: |
-          REPO_KEY=$(echo "${{ matrix.repo }}" | tr '-' '_' | tr '[:lower:]' '[:upper:]')
-          VER=$(printenv "${REPO_KEY}")
-          PKG_MODULE=$(echo "${{ matrix.repo }}" | tr '-' '_')
-          python - << PYEOF
-          import importlib, sys
-          mod = importlib.import_module("${PKG_MODULE}")
-          installed = getattr(mod, "__version__", None)
-          expected = "${VER}"
+          pip install --upgrade --force-reinstall --no-deps "pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v${PET_SCHEMA}"
+          pip install --upgrade --force-reinstall --no-deps "pet-infra @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v${PET_INFRA}"
+
+      - name: Assert installed version matches matrix pin
+        env:
+          MATRIX_REPO: ${{ matrix.repo }}
+        run: |
+          # Use importlib.metadata so the check works even when the package
+          # does not expose a __version__ attribute (pet-schema doesn't, and
+          # other repos may follow). For pet-id the pip distribution name is
+          # `pet-id` but the Python module is `pet_id_registry` — metadata-
+          # based check sidesteps that split.
+          REPO_KEY=$(echo "$MATRIX_REPO" | tr '-' '_' | tr '[:lower:]' '[:upper:]')
+          export EXPECTED_VERSION="$(printenv "${REPO_KEY}")"
+          python - << 'PYEOF'
+          import importlib.metadata as im, os, sys
+          dist = os.environ["MATRIX_REPO"]
+          expected = os.environ["EXPECTED_VERSION"]
+          installed = im.version(dist)
           if installed != expected:
-              print(f"FAIL: {mod.__name__}.__version__={installed!r} but matrix pin is {expected!r}", file=sys.stderr)
+              print(f"FAIL: {dist}=={installed!r} but matrix pin is {expected!r}", file=sys.stderr)
               sys.exit(1)
-          print(f"OK: {mod.__name__}.__version__={installed!r} matches matrix release ${MATRIX_RELEASE}")
+          print(f"OK: {dist}=={installed!r} matches matrix release {os.environ['MATRIX_RELEASE']}")
           PYEOF
 
       - name: Cross-ecosystem peer import check
         if: matrix.repo != 'pet-id'
         run: |
           python - << 'PYEOF'
-          import pet_schema, pet_infra
-          print(f"peer imports ok: pet_schema={pet_schema.__version__}, pet_infra={pet_infra.__version__}")
+          import importlib, importlib.metadata as im
+          # Import the modules to confirm they load cleanly; read their
+          # versions from pip metadata (pet-schema has no __version__ attr).
+          importlib.import_module("pet_schema")
+          importlib.import_module("pet_infra")
+          print(
+              "peer imports ok: "
+              f"pet-schema={im.version('pet-schema')}, "
+              f"pet-infra={im.version('pet-infra')}"
+          )
           PYEOF

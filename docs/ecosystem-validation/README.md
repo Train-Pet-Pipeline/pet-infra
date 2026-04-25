@@ -12,7 +12,7 @@
 | 文档 | 用途 | 状态 |
 |---|---|---|
 | [2026-04-25-design.md](2026-04-25-design.md) | 设计 spec（critic review 2 轮通过：APPROVED-WITH-FIXES → 已应用） | READY-FOR-USER-REVIEW |
-| [2026-04-25-plan.md](2026-04-25-plan.md) | 实施计划（writing-plans 产出） | DRAFT — awaiting plan-document-reviewer |
+| [2026-04-25-plan.md](2026-04-25-plan.md) | 实施计划（critic v2 review APPROVED-WITH-FIXES → 已应用） | READY-FOR-USER-REVIEW |
 | 2026-04-25-report.md | 实战 living doc（rental 期间持续追加） | TBD |
 | [2026-04-25-findings/](2026-04-25-findings/) | 每个 finding 单文件 | 0 |
 | [2026-04-25-artifacts/](2026-04-25-artifacts/) | data manifest / loss curve / metric 截图 | 0 |

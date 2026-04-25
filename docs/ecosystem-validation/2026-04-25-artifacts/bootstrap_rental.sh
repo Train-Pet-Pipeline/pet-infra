@@ -43,6 +43,8 @@ log "  python: $python_ver"
 git config --global credential.helper store
 echo "https://x-access-token:${GH_TOKEN}@github.com" > ~/.git-credentials
 export HF_HOME="${HF_HOME:-$WORKSPACE/hf-cache}"
+# F006 fix: AutoDL turbo proxy 不支持 xet protocol（CAS-server 401），强制走 HTTP fallback
+export HF_HUB_DISABLE_XET=1
 mkdir -p "$HF_HOME/qwen2vl2b" "$HF_HOME/panns" "$WORKSPACE/raw_data"
 
 # 0.1 — clone 9 repos at matrix tag

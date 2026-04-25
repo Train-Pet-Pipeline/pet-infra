@@ -11,7 +11,7 @@
 
 | 文档 | 用途 | 状态 |
 |---|---|---|
-| [2026-04-25-design.md](2026-04-25-design.md) | 设计 spec（brainstorming 产出） | DRAFT |
+| [2026-04-25-design.md](2026-04-25-design.md) | 设计 spec（brainstorming 产出 → critic review v1 已应用） | UNDER REVIEW |
 | 2026-04-25-plan.md | 实施计划（writing-plans 产出） | TBD |
 | 2026-04-25-report.md | 实战 living doc（rental 期间持续追加） | TBD |
 | [2026-04-25-findings/](2026-04-25-findings/) | 每个 finding 单文件 | 0 |

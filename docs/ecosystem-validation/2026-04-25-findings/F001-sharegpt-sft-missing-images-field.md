@@ -4,8 +4,8 @@
 |---|---|
 | 发现时间 | 2026-04-25 21:55 |
 | 发现 phase | Phase 0 / pet-schema 调查（Phase 1.2 准备阶段） |
-| severity | **STRUCTURAL** |
-| 状态 | OPEN（已通知用户，等沟通；rental 不擅改 schema） |
+| severity | **STRUCTURAL → REGRESSION**（v3.2.0 引入；非新设计缺陷而是收紧合同时丢字段） |
+| 状态 | **FIXED on rental** — 用户决策 Option A；pet-schema v3.3.0 + pet-annotation 同步更新 |
 | 北极星受影响维度 | **Pluggability + Comparability**（VLM 视觉模态不能完整 train） |
 
 ## 复现路径
@@ -61,10 +61,7 @@ VLM 训练（如 Qwen2-VL SFT）需要在 SFT 样本中传 image 路径：
 
 > "跨仓 STRUCTURAL fix 影响 ≥ 3 仓的连锁 PR" → 触发"必须停下问"
 
-**rental 期间不修**：
-- 等用户回复后再决定（接受新增字段 / 接受新建子类 / 接受标记为已知 gap V2 修）
-- Phase 1 SFT 训练继续走纯文本路径（Qwen2-VL-2B 模型本身可纯文本 SFT，loss 仍可下降）
-- 文档化此决策为 Phase 1 的"已知缺陷"
+**用户 2026-04-25 选 Option A**（"加可选字段，minor bump"）。理由对话补充：用户问"那之前怎么训练？"，证据指向 Phase 3A（2026-04-16 RTX 5090）实际 JSONL 就用了 images 字段（pet-train/docs/training-experiment-report.md:213-220）。**v3.2.0 是回归**而非"新设计缺陷"，Option A = 修补回归恢复合同。
 
 ## 修复方案备选（待用户决策）
 
@@ -93,12 +90,18 @@ class VLMShareGPTSFTSample(ShareGPTSFTSample):
 - 优点：rental 期不被打断
 - 缺点：违反 spec §1.3 不变量 #9（北极星 Pluggability < 3 = 结构性问题）
 
-## Retest 证据
+## Retest 证据 ✅
 
-待 fix 实施后：
-- pet-schema 单测：`pytest pet-schema/tests/test_training_samples.py`
-- pet-annotation export validate：30 张图 + 真 image 路径 → JSONL 含 images 字段
-- pet-train SFT recipe：visual modality 配置生效，eval 时模型可看图
+- **pet-schema** 单测：`pytest pet-schema/` → 199/199 passing（4 新测：with images / multi-image / text-only / default）
+- **pet-annotation** exporter：rental 上 `pet_annotation.cli export --format sft --annotator llm` → 30/30 SFT 含 images 字段：
+  ```
+  SFT total: 30, with_images: 30
+  sample keys: [conversations, system, tools, images, sample_id, source_target_id, annotator_id]
+  images: ['/root/autodl-tmp/raw_data/frames/local_dir/cat_images_clip_0000_f00_clip_0000_f00.png']
+  human turn: <image>\n[图像帧]\n请分析这张...
+  ```
+- **pet-train** F11 validator: 用 v3.3.0 ShareGPTSFTSample → JSONL 含 images 通过 (待 B1.3 retest 时验)
+- **Phase 1 retest**：B1.3 Qwen2-VL-2B SFT 等模型下载完 → loss 下降 + ModelCard sha 三件齐 = F001 端到端验证
 
 ## Follow-ups
 

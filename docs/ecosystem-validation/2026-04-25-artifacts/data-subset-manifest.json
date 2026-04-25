@@ -1,0 +1,356 @@
+{
+  "spec": "2026-04-25-design.md §1.5",
+  "data_root": "/Users/bamboo/Githubs/Purr-Sight/data",
+  "samples": [
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00.jpg",
+      "size_bytes": 30849,
+      "sha256": "c84c744edae2d82e89c0fc796d0311e9b5383529d5fdbaff0c037618a87d834f",
+      "rel_path": "cat_images/clip_0000_f00.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_1.jpg",
+      "size_bytes": 38086,
+      "sha256": "09600468cfa2aa8ac7b502ed1bd052f3d36fb6a04ad7ccf683da3428e044cceb",
+      "rel_path": "cat_images/clip_0000_f00_1.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_10.jpg",
+      "size_bytes": 27377,
+      "sha256": "cbb58b0a8ded83db3d2d5454211510aac83aa6901eb63522f26bc790386673f9",
+      "rel_path": "cat_images/clip_0000_f00_10.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_11.jpg",
+      "size_bytes": 43602,
+      "sha256": "5f2b43ae54964c038de642f4065e0d3941ce4c05c6c7375bd4eb8ab1edb45f0a",
+      "rel_path": "cat_images/clip_0000_f00_11.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_12.jpg",
+      "size_bytes": 9048,
+      "sha256": "651d3106a936e558484e374af7401c89399d5c5fa1cd834bb34611a3a12adb16",
+      "rel_path": "cat_images/clip_0000_f00_12.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_13.jpg",
+      "size_bytes": 27875,
+      "sha256": "90203d49990366b3f4a01746d827d16f246fca2eebf636174c2190ddfa054971",
+      "rel_path": "cat_images/clip_0000_f00_13.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_14.jpg",
+      "size_bytes": 27405,
+      "sha256": "cdb02330ebf7708b2ec293da6f6fc3c8381c41aa05e90534b141af0207dab5f6",
+      "rel_path": "cat_images/clip_0000_f00_14.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_15.jpg",
+      "size_bytes": 45194,
+      "sha256": "7e0f1682b5724992c18da10fd873b3262daf25f81895b8105169600c640d3b01",
+      "rel_path": "cat_images/clip_0000_f00_15.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_16.jpg",
+      "size_bytes": 84254,
+      "sha256": "a160ca5524b8e7c0508a4d1b050d3572057f92ce896991e1a022c85bd729f6e8",
+      "rel_path": "cat_images/clip_0000_f00_16.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_17.jpg",
+      "size_bytes": 16125,
+      "sha256": "1957abea391acea05eea0f9e7d27b639aaad029911ef5c0c5296079d60dc0199",
+      "rel_path": "cat_images/clip_0000_f00_17.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_18.jpg",
+      "size_bytes": 44684,
+      "sha256": "cead0a4d5a5d25d49f498db4c20ba07bd78f6fe96c5fe9128e314529656c1769",
+      "rel_path": "cat_images/clip_0000_f00_18.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_19.jpg",
+      "size_bytes": 78297,
+      "sha256": "805fc295320165132b522b4a7d15a4db17e00ec5caf8cbab089b8f4ce3544291",
+      "rel_path": "cat_images/clip_0000_f00_19.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_2.jpg",
+      "size_bytes": 20566,
+      "sha256": "01c24d62628d68f9993a2c9c8ad4a8a44ae41a6a82b7c67fa6a78025a4e55500",
+      "rel_path": "cat_images/clip_0000_f00_2.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_20.jpg",
+      "size_bytes": 64384,
+      "sha256": "7b7de15730394c77a772054f507662da65778dea9ca8d9bb6829f0a09dd11c89",
+      "rel_path": "cat_images/clip_0000_f00_20.jpg"
+    },
+    {
+      "category": "cat_images",
+      "filename": "clip_0000_f00_21.jpg",
+      "size_bytes": 29349,
+      "sha256": "f91bdec26691c27be3581f0c5fb5991488a39802ecc8480b402ddb68c0195f7b",
+      "rel_path": "cat_images/clip_0000_f00_21.jpg"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000000.png",
+      "size_bytes": 217431,
+      "sha256": "b3237dde7e4cff044b3e7e2bd17038985ad28ee73a956412c5cf1d6e2e13217b",
+      "rel_path": "dog_images/hf_000000.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000001.png",
+      "size_bytes": 112219,
+      "sha256": "c5da82a233a7592ce645842d5ca09b0d13d647c18eebc87fc74d51098fee875d",
+      "rel_path": "dog_images/hf_000001.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000002.png",
+      "size_bytes": 260259,
+      "sha256": "70a026cd36e78f5952e041b679437db211ca18eeac90db07c090bf049e925f83",
+      "rel_path": "dog_images/hf_000002.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000003.png",
+      "size_bytes": 203464,
+      "sha256": "42d09f537577deae3ee18fa5ebef7c931b024bcd572902f11f4c2d8e3d2486d1",
+      "rel_path": "dog_images/hf_000003.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000004.png",
+      "size_bytes": 224036,
+      "sha256": "5cfbd9a6b6cb5b016dbae4f71456c3ae308116061de54e6e463702046f5d7c99",
+      "rel_path": "dog_images/hf_000004.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000005.png",
+      "size_bytes": 57659,
+      "sha256": "be5a2cd8965b73db49e6e5db1d6f56bc1a06899a18726a3dd8e98569d870c7dc",
+      "rel_path": "dog_images/hf_000005.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000006.png",
+      "size_bytes": 44875,
+      "sha256": "5e7b8fba6d94242ed13221b445f31706976f5d48a407332e8d7f63dd70795a84",
+      "rel_path": "dog_images/hf_000006.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000007.png",
+      "size_bytes": 98275,
+      "sha256": "8a26d8d8d5bb9003d09d31a33b971d48bcd7acebd584f654d30dd7df1fa7f7ef",
+      "rel_path": "dog_images/hf_000007.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000008.png",
+      "size_bytes": 364389,
+      "sha256": "f0263076e71059f71bd8bcc82ddcb035e6a96f0f3118f5e84fc4e87dcf82f4fd",
+      "rel_path": "dog_images/hf_000008.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000009.png",
+      "size_bytes": 309625,
+      "sha256": "b1b3cef892772547c2334fd68e3f5b7ae758642521be21eaa4171830e793ce72",
+      "rel_path": "dog_images/hf_000009.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000010.png",
+      "size_bytes": 130380,
+      "sha256": "cc4a5bd8c0ee6932f26fa10c590e4f431959ce999887348096618262f474895c",
+      "rel_path": "dog_images/hf_000010.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000011.png",
+      "size_bytes": 137849,
+      "sha256": "18e6ea7c0f0bbe2033e9c2dca3ba4590fa18ae094bafc0ea94db1471ba4b7cf0",
+      "rel_path": "dog_images/hf_000011.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000012.png",
+      "size_bytes": 299296,
+      "sha256": "325a89d37e93d304c4f44689348d263f52359cadd313b9e9076e54ba3b02c358",
+      "rel_path": "dog_images/hf_000012.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000013.png",
+      "size_bytes": 262379,
+      "sha256": "2b82ad5a1eaf4585958b21f55e145794ec866f01a5870b1ac3109986831ca344",
+      "rel_path": "dog_images/hf_000013.png"
+    },
+    {
+      "category": "dog_images",
+      "filename": "hf_000014.png",
+      "size_bytes": 85381,
+      "sha256": "81c994c7818075fcaa05ae6b5d66f9aa071f1cd9b900f82f47b5ffb82499f84e",
+      "rel_path": "dog_images/hf_000014.png"
+    },
+    {
+      "category": "cat_audio",
+      "filename": "-WF_YDRwX9I.wav",
+      "size_bytes": 2008514,
+      "sha256": "3d4833fbc684f7611c7a9e51c13fe6a3f37ec34fdfdd41ff01b050ec4939f75e",
+      "rel_path": "cat_audio/-WF_YDRwX9I.wav"
+    },
+    {
+      "category": "cat_audio",
+      "filename": "-jHZ6kqipws.wav",
+      "size_bytes": 7681614,
+      "sha256": "382fdf3d67886768cc8b917fd2af18ca6952de179840005a5113b4d22d03de07",
+      "rel_path": "cat_audio/-jHZ6kqipws.wav"
+    },
+    {
+      "category": "cat_audio",
+      "filename": "-jHZ6kqipws_1.wav",
+      "size_bytes": 7681614,
+      "sha256": "382fdf3d67886768cc8b917fd2af18ca6952de179840005a5113b4d22d03de07",
+      "rel_path": "cat_audio/-jHZ6kqipws_1.wav"
+    },
+    {
+      "category": "cat_audio",
+      "filename": "-oxF9jhY94s_1.wav",
+      "size_bytes": 2089378,
+      "sha256": "7cab51045cdcabf0df2388012f06feb6c88b318bff1cb578843adf341b8af567",
+      "rel_path": "cat_audio/-oxF9jhY94s_1.wav"
+    },
+    {
+      "category": "cat_audio",
+      "filename": "-r1H8hBeYmw_21.wav",
+      "size_bytes": 1914990,
+      "sha256": "7cbb9c2f767427630a572c3850f198e5d32cd19136c2cfa06970fbf81834b7e5",
+      "rel_path": "cat_audio/-r1H8hBeYmw_21.wav"
+    },
+    {
+      "category": "cat_audio",
+      "filename": "-urYwYLrcMA_30.wav",
+      "size_bytes": 1765486,
+      "sha256": "e3dce94795bf7ab4d502d32a3b372e185cc0a71ba915097101891a4f9a3615de",
+      "rel_path": "cat_audio/-urYwYLrcMA_30.wav"
+    },
+    {
+      "category": "cat_audio",
+      "filename": "-ysNtKG8FlU_30.wav",
+      "size_bytes": 3834990,
+      "sha256": "40fc5e7495627dca0edcf6745df2bcef0e326c4fba14b1ad24a3b17257254e19",
+      "rel_path": "cat_audio/-ysNtKG8FlU_30.wav"
+    },
+    {
+      "category": "cat_audio",
+      "filename": "0SEHGxAQL18_30.wav",
+      "size_bytes": 3834990,
+      "sha256": "263fd8ec713f629ace25fcf4c7d660be32ee4bddc46f7aa8adaa71b0fe922b3a",
+      "rel_path": "cat_audio/0SEHGxAQL18_30.wav"
+    },
+    {
+      "category": "dog_audio",
+      "filename": "1-100032-A-0.wav",
+      "size_bytes": 441044,
+      "sha256": "f40a849a2375c8c63312a73dd2dd6c74007301fcc21b4be2ece29a642831e3d8",
+      "rel_path": "dog_audio/1-100032-A-0.wav"
+    },
+    {
+      "category": "dog_audio",
+      "filename": "1-110389-A-0.wav",
+      "size_bytes": 441044,
+      "sha256": "4a18f3f834eb184b9f02595ac74c7de37ef8048a3da92f58f27018fec580b36a",
+      "rel_path": "dog_audio/1-110389-A-0.wav"
+    },
+    {
+      "category": "dog_audio",
+      "filename": "1-30226-A-0.wav",
+      "size_bytes": 441044,
+      "sha256": "ca2626d2b49c7c20a3e0f9f8d7aa56f4497643c6bc264ff37764392be2b15753",
+      "rel_path": "dog_audio/1-30226-A-0.wav"
+    },
+    {
+      "category": "dog_audio",
+      "filename": "1-30344-A-0.wav",
+      "size_bytes": 441044,
+      "sha256": "52a876cff473fe9b6deb4feea9545a2b976e63e03744921afc72f9800758ce30",
+      "rel_path": "dog_audio/1-30344-A-0.wav"
+    },
+    {
+      "category": "dog_audio",
+      "filename": "1-32318-A-0.wav",
+      "size_bytes": 441044,
+      "sha256": "0e96f0bab8bbba81c98a8d7741cf258c8381c6481bac36961b8603a600a6c321",
+      "rel_path": "dog_audio/1-32318-A-0.wav"
+    },
+    {
+      "category": "dog_audio",
+      "filename": "1-59513-A-0.wav",
+      "size_bytes": 441044,
+      "sha256": "b573fcbb4d3a8a05a857dc1ffdb09c687253ff3a03baa326460e291ce4cbfee7",
+      "rel_path": "dog_audio/1-59513-A-0.wav"
+    },
+    {
+      "category": "dog_audio",
+      "filename": "1-85362-A-0.wav",
+      "size_bytes": 441044,
+      "sha256": "2f7742933d677b0dc8d77b802e90ee0fb94b5828183ca96f7a8dd8d24ab57b7b",
+      "rel_path": "dog_audio/1-85362-A-0.wav"
+    },
+    {
+      "category": "dog_audio",
+      "filename": "1-97392-A-0.wav",
+      "size_bytes": 441044,
+      "sha256": "9ec2eb304d2a1ab3a50150a2a558dce0771e4ffc920d074e107fd76cb7b5d28c",
+      "rel_path": "dog_audio/1-97392-A-0.wav"
+    },
+    {
+      "category": "cat_video",
+      "filename": "iQWRtIOTRn8.mp4",
+      "size_bytes": 232602,
+      "sha256": "2cb5c033b6176a91015e9d547a85b974473155e7867f5332cc0ee55b9126b641",
+      "rel_path": "cat_video/iQWRtIOTRn8.mp4"
+    },
+    {
+      "category": "cat_video",
+      "filename": "uLaMI1Nlh9k.mp4",
+      "size_bytes": 526772,
+      "sha256": "fabab19d8ee33962ecd60cf31ebb0f8a82b8e65066ab90c69776dc8f6f9e4da3",
+      "rel_path": "cat_video/uLaMI1Nlh9k.mp4"
+    },
+    {
+      "category": "dog_video",
+      "filename": "22vFF6WauXM.mp4",
+      "size_bytes": 4479966,
+      "sha256": "d9446ee13f70566e763e0975659e4b6c6985a6861c345ccdd0897f7e2147a582",
+      "rel_path": "dog_video/22vFF6WauXM.mp4"
+    },
+    {
+      "category": "dog_video",
+      "filename": "VHdkUGGcqnE.mp4",
+      "size_bytes": 14070404,
+      "sha256": "95f7b3cdf5b9b1187f89c68022038834a77028e026bc601dcefa3043f4ac9a65",
+      "rel_path": "dog_video/VHdkUGGcqnE.mp4"
+    }
+  ]
+}

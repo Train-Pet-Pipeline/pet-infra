@@ -11,8 +11,9 @@
 
 | 文档 | 用途 | 状态 |
 |---|---|---|
-| [2026-04-25-design.md](2026-04-25-design.md) | 设计 spec（critic review 2 轮通过：APPROVED-WITH-FIXES → 已应用） | READY-FOR-USER-REVIEW |
-| [2026-04-25-plan.md](2026-04-25-plan.md) | 实施计划（critic v2 review APPROVED-WITH-FIXES → 已应用） | READY-FOR-USER-REVIEW |
-| 2026-04-25-report.md | 实战 living doc（rental 期间持续追加） | TBD |
-| [2026-04-25-findings/](2026-04-25-findings/) | 每个 finding 单文件 | 0 |
-| [2026-04-25-artifacts/](2026-04-25-artifacts/) | data manifest / loss curve / metric 截图 | 0 |
+| [2026-04-25-design.md](2026-04-25-design.md) | 设计 spec（critic 2 轮 → 用户 OK） | LOCKED |
+| [2026-04-25-plan.md](2026-04-25-plan.md) | 实施计划（critic 2 轮 → 用户"在卡上测试"） | LOCKED |
+| [2026-04-25-report.md](2026-04-25-report.md) | 实战 living doc（rental 启动后开始追加） | SKELETON 就绪 |
+| [2026-04-25-findings/](2026-04-25-findings/) | 每个 finding 单文件 | 0（F000-template 已建） |
+| [2026-04-25-artifacts/](2026-04-25-artifacts/) | data manifest / loss curve / metric 截图 | 4 文件就绪：manifest / selector / bootstrap / kickoff |
+| **当前状态** | — | **WAITING-FOR-USER-TO-RENT-GPU** |

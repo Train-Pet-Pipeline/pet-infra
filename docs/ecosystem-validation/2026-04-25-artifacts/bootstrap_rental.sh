@@ -60,10 +60,25 @@ git -C pet-infra checkout feature/eco-validation-design-2026-04-25 || \
 
 # 0.2 — conda + CUDA torch
 log "step 0.2 — conda env + CUDA torch"
-source "$(conda info --base)/etc/profile.d/conda.sh" 2>/dev/null || \
+source "$(/root/miniconda3/bin/conda info --base 2>/dev/null || conda info --base)/etc/profile.d/conda.sh" 2>/dev/null || \
   fail "0.2" "conda not installed"
+# F002 fix: AutoDL 默认 .condarc 用了已废弃的 tuna pkgs/free + libmamba solver，触发 conda 24.4 崩溃
+if grep -q "anaconda/pkgs/free" ~/.condarc 2>/dev/null; then
+  log "  patching .condarc (F002: remove deprecated pkgs/free + force classic solver)"
+  cat > ~/.condarc <<'CONDARC'
+channels:
+  - defaults
+show_channel_urls: true
+solver: classic
+default_channels:
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r
+custom_channels:
+  conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud
+CONDARC
+fi
 if ! conda env list | grep -q "^pet-pipeline "; then
-  conda create -n pet-pipeline python=3.11 -y
+  CONDA_NO_PLUGINS=true conda create -n pet-pipeline python=3.11 -y
 fi
 conda activate pet-pipeline
 if ! python -c "import torch" 2>/dev/null; then
@@ -118,10 +133,10 @@ log "  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:0:10}..."
 
 # 0.4.7 — HF 模型预下载
 log "step 0.4.7 — HF model preload"
-if [[ ! -d "$HF_HOME/qwen2vl2b/model.safetensors" ]] && \
-   [[ -z "$(ls -A "$HF_HOME/qwen2vl2b" 2>/dev/null)" ]]; then
-  huggingface-cli download Qwen/Qwen2-VL-2B-Instruct \
-    --local-dir "$HF_HOME/qwen2vl2b" --local-dir-use-symlinks False \
+# F003 fix: huggingface-cli 已 deprecated，新版 huggingface_hub>=0.27 用 `hf`
+if ! ls "$HF_HOME/qwen2vl2b"/*.safetensors >/dev/null 2>&1; then
+  pip install --quiet 'huggingface_hub[cli]>=0.27' 2>&1 | tail -1
+  hf download Qwen/Qwen2-VL-2B-Instruct --local-dir "$HF_HOME/qwen2vl2b" \
     || fail "0.4.7" "Qwen2-VL-2B download"
 else
   log "  Qwen2-VL-2B already cached"

@@ -25,6 +25,10 @@ declare -A REPO_TAGS=(
 log() { printf '[bootstrap %s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 fail() { log "FAIL at step $1: $2"; exit 1; }
 
+# AutoDL 学术加速（仅 github/huggingface；non-China 实例此文件不存在，跳过）
+# shellcheck disable=SC1091
+[[ -f /etc/network_turbo ]] && source /etc/network_turbo
+
 mkdir -p "$WORKSPACE"
 cd "$WORKSPACE"
 

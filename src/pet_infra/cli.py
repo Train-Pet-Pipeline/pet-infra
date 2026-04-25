@@ -150,6 +150,13 @@ def run_cmd(
         )
 
     from pet_infra.orchestrator.runner import GateFailedError, pet_run  # noqa: PLC0415
+    from pet_infra.plugins.discover import discover_plugins  # noqa: PLC0415
+
+    # F009 fix: ensure plugins from downstream repos are registered before
+    # pet_run dispatches stages. Without this, fresh users hit "TRAINERS['x']
+    # not registered" even after `pip install -e` of all repos because plugin
+    # entry-point modules have not been imported.
+    discover_plugins()
 
     # Guard runs before path validation so that a bad launcher flag surfaces
     # a clear actionable error even when the recipe file does not yet exist.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
@@ -119,6 +120,16 @@ def pet_run(
         last_card = card
 
     assert last_card is not None, "recipe has no stages"
+
+    # F012 fix: persist final ModelCard to ./model_cards/<id>.json so
+    # `pet run --replay <card_id>` can find it. Default registry is `./model_cards`
+    # (also configurable via PET_CARD_REGISTRY env var, matching replay.py).
+    registry = Path(os.environ.get("PET_CARD_REGISTRY", "./model_cards"))
+    registry.mkdir(parents=True, exist_ok=True)
+    (registry / f"{last_card.id}.json").write_text(
+        last_card.model_dump_json(indent=2)
+    )
+
     return last_card
 
 

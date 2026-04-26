@@ -148,7 +148,7 @@ releases:
     pet_infra: "2.9.0"
     pet_data: "1.3.0"
     pet_annotation: "2.2.2"  # F019: v2.2.1 regressed F001 images field; v2.2.2 restored + pet-schema pin bumped to v3.3.0
-    pet_train: "2.2.2"
+    pet_train: "2.2.3"       # F019: v2.2.2 still pinned pet-schema v3.2.1; v2.2.3 bumps pin to v3.3.0 (consumer-side ShareGPTSFTSample.images)
     pet_eval: "2.4.1"
     pet_quantize: "2.1.0"
     pet_ota: "2.2.0"

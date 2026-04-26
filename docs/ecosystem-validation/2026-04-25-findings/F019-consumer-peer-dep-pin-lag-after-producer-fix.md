@@ -74,7 +74,7 @@ PR: pet-annotation #27 → tag v2.2.2
 
 ### 审计其它 consumer 仓
 
-需做（task #7）：检查 pet-train、pet-eval、pet-quantize、pet-ota、pet-data 是否有同款 peer-dep pin lag——如 pet-schema v3.3.0 已 ship 但消费者仍 pin v3.2.1。审计命令：
+审计命令（已执行）：
 
 ```bash
 for repo in pet-train pet-eval pet-quantize pet-ota pet-data; do
@@ -83,6 +83,21 @@ for repo in pet-train pet-eval pet-quantize pet-ota pet-data; do
   grep -rE "PET_SCHEMA.*v?3\.|pet-schema.*v?3\." src/ tests/ .github/ 2>/dev/null | head -5
 done
 ```
+
+审计结果（2026-04-26）：
+
+| 仓 | 当前 pet-schema pin | 是否 import 新 v3.3.0 字段 | 是否需 bump |
+|---|---|---|---|
+| **pet-train** | v3.2.1（ci.yml + peer-dep-smoke.yml）| **是**（`from pet_schema import ShareGPTSFTSample`，`data_validation.py` 走 `model_validate_json` —— 一旦 pet-annotation v2.2.2 ship 就断）| **是 → v2.2.3 ships pin bump** |
+| pet-eval | v3.2.1 | 否（无 `ShareGPTSFTSample` import）| 否（保留 v3.2.1 直到 functional 需要）|
+| pet-quantize | v3.2.1 | 否（用 `get_prompt_paths` / `validate_output` / `__version__` —— 无 ShareGPTSFTSample ）| 否 |
+| pet-ota | （无）| 否 | 否 |
+| pet-data | v3.1.0 | 否（用 `BaseSample` —— 与 ShareGPTSFTSample 无关）| 否（但 v3.1.0 是更老的 lag —— 见 follow-up）|
+| pet-id | （无）| 否 | 否 |
+
+**关键 fix**：pet-train v2.2.3（PR `fix/F019-bump-pet-schema-pin-v3.3.0`）— ci.yml + peer-dep-smoke.yml 都 v3.2.1 → v3.3.0，pyproject 2.2.2 → 2.2.3。
+
+**Follow-up（非阻塞）**：pet-data 的 pet-schema pin 是 v3.1.0 即更落后。`BaseSample` 接口在 v3.1 → v3.3 间没破坏性变更，所以**不影响功能**，但凡修任何 pet-data PR 都顺手 bump pin 到 v3.3.0 + matrix 同行。
 
 ## Retest 证据（待 v2.2.2 ship 后回填）
 

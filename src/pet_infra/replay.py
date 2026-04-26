@@ -74,10 +74,15 @@ def _current_git_shas() -> dict[str, str]:
         or ``{}`` if the repo root cannot be found.
     """
     try:
-        # Structure: <root>/pet-infra/src/pet_infra/replay.py
-        # parents: [0]=replay.py, [1]=pet_infra, [2]=src, [3]=pet-infra, [4]=root
+        # Layout: <root>/pet-infra/src/pet_infra/replay.py
+        # Path.parents indexing is 0-based on the IMMEDIATE parent dir:
+        #   parents[0]=src/pet_infra  parents[1]=src  parents[2]=pet-infra  parents[3]=root
+        # F024 fix: was parents[4] (off-by-one — resolved one level ABOVE the
+        # monorepo, where iterdir() either found nothing or unrelated repos,
+        # silently returning {}). pet-train.lineage.collect_git_shas was patched
+        # in lockstep so card-side and replay-side now align on hyphenated keys.
         module_file = Path(__file__).resolve()
-        root = module_file.parents[4]
+        root = module_file.parents[3]
         # Sanity-check: root must contain at least one sibling repo
         siblings = [
             p for p in root.iterdir()

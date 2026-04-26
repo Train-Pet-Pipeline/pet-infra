@@ -2659,6 +2659,67 @@ releases:
 
 ---
 
+### 11.8 Plugin-contract test 纪律：fixture-real 而非 mock-only（F008-F027 retro 教训）
+
+2026-04-25 → 2026-04-27 ecosystem-validation 期间，**11 次同款 retro pattern 被反复发现**：F008 / F011 / F012 / F014 / F021 / F022 / F023 / F024 / F025 / F026 / F027 全部都是
+
+> "shipped + unit-test mock-only + 没真 path 跑过"
+
+具体表现因 finding 而异，但根因都是单元测试 mock 太多，没有 fixture-real 验证，等 finding 在生产 path 跑出 bug 才发现。例如：
+
+- F022: 单元测确认 `LlamaFactorySFTTrainer` 能 `register` 进 TRAINERS，但**没** assert 训练完产生的 ModelCard.metrics 非空 → train_loss 永远 None 但所有单元测 PASS。
+- F023: F022 fix 后单元测用 SFT-shape fixture pass，**没** 写 DPO-shape fixture → DPO rewards/* 永远 None。
+- F024: 插件单元测断 "返回 dict 含 `pet_train` key"——这个 trivial assertion **锁住了 underscore-key bug**。fixture-real 应该是 "实例化 collect 并 verify against real sibling repo SHA"。
+- F025: wrapper 单元测 mock 路径，**没** verify `Path(card.checkpoint_uri.replace("file://","")) / "adapter_model.safetensors"` 真存在 → silent finetune-disabled bug 永远不会被任何 unit test 抓。
+- F026: F008 加了 PANNsAudioInference plugin，单元测 cover 自身，但 **没** verify `audio_evaluator` 真用了它 → orchestrator 路径仍走 broken legacy 类。
+- F027: log_metrics 方法实现 + 单元测齐全，**没** verify orchestrator 真 call 它 → ClearML dashboard 永远 empty。
+
+#### 14.8.1 `fixture-real` 测试规范
+
+每个 plugin 接口（producer or consumer）**必须**至少包含以下一项 fixture-real 测试，才算 plugin-contract 完成：
+
+1. **File-existence assertion**: 任何写 `file://` URI 的代码必须有测试 fixture 写真文件 + 跑业务逻辑 + assert URI 指向的 file 真存在 + 内容可读（不只 mock 路径字符串）。
+2. **Round-trip data flow**: 任何 plugin A → plugin B 数据流必须有 fixture：用 plugin A 产生真 artifact，喂给 plugin B，assert B 能 consume + emit 期望 metrics。
+3. **End-to-end orchestrator dispatch**: 任何 plugin contract（trainer/evaluator/converter/ota）必须有一测：通过 `EVALUATORS.build({...})` / `TRAINERS.build({...})` 真实例化 + `run(input_card, recipe)`（with `MagicMock()` for heavy deps if needed），assert 返回 ModelCard 含期望字段。
+4. **Diff-shape fixture** (DPO 类): 每个新 trainer 引入 → 单元测必须用该 trainer 自身 schema 的 fixture（不是 SFT shape）。例如 DPO trainer 的 metrics test 必须用 DPO `all_results.json` + `trainer_state.json::log_history` 含 rewards/* 的 fixture，**不能复用 SFT fixture**。
+
+#### 14.8.2 PR 模板硬要求
+
+所有 PR 修改 plugin contract（含新增 / 修改 trainer / evaluator / runner / experiment_logger / replay）的 description **必须**包含以下勾选项之一（PR template 强制）：
+
+- [ ] 新增 / 修改 fixture-real test 验证生产路径（appropriate to plugin contract changes 的种类）
+- [ ] N/A：本 PR 不修 plugin-contract 接口（仅 docs / typo / formatting）
+
+reviewer **必须**拒绝任何前一项未勾且非 N/A 的 PR。
+
+#### 14.8.3 Retro pattern 第 N+1 次发现时
+
+如果未来又发现一个同款 finding（"shipped + mock-only + no real path"），应：
+
+1. fix-forward 走 patch release 同前
+2. **在该 finding doc 末尾追加 retro count**：F0XX 是 "F008 retro pattern 第 N+1 次"
+3. 如 N+1 ≥ 12，pet-infra repo 必须开个独立 issue/PR 强化 §14.8.1 的实施（增加自动化检查、CI pre-commit hook 等）。**第 12 次同款是产品级 process 失败信号**，需要重新审视 retro discipline 而不是单 fix 一次
+
+#### 14.8.4 历史 reference
+
+完整 finding doc 集中于 `pet-infra/docs/ecosystem-validation/2026-04-25-findings/F***.md`。F008-F027 retro 教训表如下（按发现顺序）：
+
+| Finding | 同款 N# | 类别 | Verified-by |
+|---|---|---|---|
+| F008 | 1 | plugin shipped, hand-rolled MobileNet incompat | retro arch-drift warning |
+| F011 | 2 | wrapper used private API | wrapper passes args via run_exp dict |
+| F012 | 3 | replay claimed shipped, ModelCard not persisted | persist + retest |
+| F014 | 4 | fusion eval missing `run()` | base.py concrete impl |
+| F021 | 5 | replay resolved_config_uri null | runner.py dump + populate |
+| F022 | 6 | LF wrapper metrics={} | parse all_results.json |
+| F023 | 7 | DPO rewards/* lost | parse trainer_state.json log_history |
+| F024 | 8 | git_shas hyphen/underscore mismatch | shared lineage helper + parents[3] |
+| F025 | 9 | checkpoint_uri /adapter | drop suffix + fixture-real existence |
+| F026 | 10 | audio_evaluator legacy class | cfg `inference_backend` switch |
+| F027 | 11 | log_metrics never called | runner.py call site |
+
+---
+
 ## 12. Phase 4 软件闭环（pet-infra 2.5.0 / pet-eval 2.2.0 / pet-ota 2.1.0）
 
 > Phase 4 的最终交付版本组合固化于 compatibility_matrix.yaml 的 `2026.09` 行。

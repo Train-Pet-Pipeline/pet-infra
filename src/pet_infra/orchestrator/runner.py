@@ -107,6 +107,13 @@ def pet_run(
         if task_id is not None:
             card.clearml_task_id = task_id
         experiment_logger.log_model_card(card)
+        # F027 fix: also forward card.metrics to the logger as scalars so ClearML
+        # dashboard shows train_loss / rewards/margins / etc. log_model_card
+        # connects the card as configuration JSON (nested), which is searchable
+        # but not chartable; log_metrics emits per-metric scalars at the current
+        # iteration so each stage's signals appear on the task's plot.
+        if card.metrics:
+            experiment_logger.log_metrics(card.metrics)
         cache.save(card_id, card.model_dump(mode="json"))
         experiment_logger.finish("success")
 

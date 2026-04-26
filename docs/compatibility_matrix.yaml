@@ -145,11 +145,11 @@ releases:
 
   - release: "2026.11-eco-validation-fixes"
     pet_schema: "3.3.0"
-    pet_infra: "2.9.0"
+    pet_infra: "2.9.3"       # F021 replay resolved_config_uri populate + F024 parents off-by-one fix + F025/F026 finding docs
     pet_data: "1.3.0"
     pet_annotation: "2.2.2"  # F019: v2.2.1 regressed F001 images field; v2.2.2 restored + pet-schema pin bumped to v3.3.0
-    pet_train: "2.2.3"       # F019: v2.2.2 still pinned pet-schema v3.2.1; v2.2.3 bumps pin to v3.3.0 (consumer-side ShareGPTSFTSample.images)
-    pet_eval: "2.4.1"
+    pet_train: "2.2.5"       # F022 LF metrics + F023 DPO rewards + F024 lineage + F025 checkpoint_uri (was 2.2.3)
+    pet_eval: "2.5.1"        # gate_tier feature (v2.5.0) + F026 audio_evaluator default PANNs (v2.5.1)
     pet_quantize: "2.1.0"
     pet_ota: "2.2.0"
     pet_id: "0.2.2"
@@ -211,3 +211,42 @@ releases:
           ships pet-annotation v2.2.2 (replaces regressed v2.2.1) with images=
           restored + PET_SCHEMA_PIN bumped to v3.3.0. 详见
           docs/ecosystem-validation/2026-04-25-findings/F019-consumer-peer-dep-pin-lag-after-producer-fix.md
+
+      2026-04-27 续租 session (rental retest, 同卡续) — 7 个增补 finding：
+        - F017 (MEDIUM): audio 5-class taxonomy 是 feeder-behavior 不是 species-ID；
+          handoff retro 8/8 frames 验证用 cat-meow/dog-bark out-of-domain。doc only。
+        - F020 (MEDIUM): smoke_tiny / smoke_mps / smoke_foundation 引用不存在
+          config_path / fake_trainer；`pet validate` 给 "OK" 误导。Fix:
+          recipes/replay_test.yaml minimal 替代 + finding doc.
+        - F021 (HIGH): F012 fix 半完成 — pet_run() 不写 card.resolved_config_uri；
+          replay 永远 fail-fast。Fix: runner.py dump resolved_dict + populate
+          URI/sha. **Replay positive round-trip + tampered-config sha-mismatch
+          双面真测过.** Comparability dim 4/5 真兑现.
+        - F022 (STRUCTURAL): pet-train llamafactory_sft / llamafactory_dpo wrappers
+          metrics={} 硬编码；train_loss / runtime / rewards 永远丢失. Fix: 读
+          all_results.json 进 ModelCard.metrics. pet-train v2.2.4 ships.
+          Verified rental: train_loss=0.5181 进 card.metrics.
+        - F023 (HIGH): DPO rewards/{margins,chosen,rejected} 不在 all_results.json
+          (per-step in trainer_state.json::log_history); F022 抓不到. Fix: walk
+          log_history reverse 抓最后含 rewards/* 的 entry. pet-train v2.2.4-rebased.
+          Verified rental: rewards/margins=0.5325 进 card.metrics.
+        - F024 (STRUCTURAL): F012 git-drift 完全瘫痪 — 双 bug 互相 mask:
+          (1) plugin _collect_git_shas 硬编码 {"pet_train": <CWD HEAD>} (underscore
+          key, wrong value); (2) replay._current_git_shas parents[4] off-by-one
+          (resolves above monorepo root → empty siblings). Fix: pet-train 新增
+          lineage.collect_git_shas 走 sibling 仓 hyphenated keys; pet-infra
+          parents[3]. pet-train v2.2.5 + pet-infra v2.9.3 ships.
+          **Verified rental: drift warning 真 fire 当 pet-train HEAD 改时.**
+        - F025 (STRUCTURAL): wrapper 写 checkpoint_uri = .../adapter 但 LF 不
+          创建 adapter/ 子目录 → 下游 vlm_evaluator from_pretrained() FileNotFound;
+          potential silent base-model fallback in某 transformers 版本. Fix: drop
+          /adapter 后缀, checkpoint_uri = output_dir. pet-train v2.2.5 ships.
+          Verified via fixture-real existence check unit test.
+        - F026 (STRUCTURAL): F008 fix 加了 pet_train.audio.PANNsAudioInference
+          但 pet-eval audio_evaluator 还在 import broken legacy AudioInference;
+          orchestrator audio path 仍走 broken 类. Fix: cfg `inference_backend`
+          默认 'panns', legacy_mobilenetv2 opt-in. pet-eval v2.5.1 ships.
+
+      Same retro 教训第 N 次 (F008/F011/F012/F014/F021/F022/F023/F024/F025/F026):
+      "shipped + unit-test mock + 没真 path 跑过". 结构性 fix: 所有 plugin-contract
+      layer 必带 fixture-real test.

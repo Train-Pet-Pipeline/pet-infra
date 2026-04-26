@@ -1,0 +1,20 @@
+recipe:
+  recipe_id: replay_test
+  description: "F012 replay smoke — single tiny_test train stage; minimum viable for `pet run --replay <card>` round-trip determinism check"
+  scope: single_repo
+  owner_repo: pet-infra
+  schema_version: "2.0.0"
+  stages:
+    - name: train
+      component_registry: trainers
+      component_type: tiny_test
+      inputs: {}
+      config_path: configs/smoke/tiny_train.yaml
+      depends_on: []
+  variations: []
+  produces:
+    - replay_smoke_card
+  default_storage: local
+  required_plugins:
+    - pet_infra
+    - pet_train

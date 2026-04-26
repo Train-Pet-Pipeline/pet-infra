@@ -8,3 +8,6 @@ __pycache__/
 build/
 dist/
 .DS_Store
+
+# F012 ModelCard persistence target — orchestrator runtime output, not source
+model_cards/

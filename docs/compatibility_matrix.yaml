@@ -147,7 +147,7 @@ releases:
     pet_schema: "3.3.0"
     pet_infra: "2.9.0"
     pet_data: "1.3.0"
-    pet_annotation: "2.2.1"
+    pet_annotation: "2.2.2"  # F019: v2.2.1 regressed F001 images field; v2.2.2 restored + pet-schema pin bumped to v3.3.0
     pet_train: "2.2.2"
     pet_eval: "2.4.1"
     pet_quantize: "2.1.0"
@@ -201,7 +201,13 @@ releases:
       Post-rental followup (2026-04-26):
         - F018 (STRUCTURAL): 5 仓 7 个 release tag 装出来 importlib.metadata.version()
           返回旧版本（pyproject.toml 未在 release PR 中 bump）。Fix-forward 走 5 仓
-          patch release（v0.2.2 / v2.2.1 / v2.2.2 / v2.4.1 / v2.9.0）+ 9 仓加
-          `release-version-consistency.yml` workflow guard 防回归。Matrix 行的
-          pin 已刷至新 patch tag。详见
+          patch release（v0.2.2 / v2.2.2 / v2.2.2 / v2.4.1 / v2.9.0）+ 9 仓加
+          `release-version-consistency.yml` workflow guard 防回归。详见
           docs/ecosystem-validation/2026-04-25-findings/F018-release-tags-ship-stale-pyproject-version.md
+        - F019 (HIGH): pet-annotation peer-dep pin (PET_SCHEMA_PIN + ci.yml) lagged
+          behind producer F001 fix; PR #22 used new ShareGPTSFTSample.images field
+          requiring pet-schema v3.3.0 but didn't bump pin → dev CI broke silently
+          → F018 agent dropped images= code instead of bumping pin. Fix-forward
+          ships pet-annotation v2.2.2 (replaces regressed v2.2.1) with images=
+          restored + PET_SCHEMA_PIN bumped to v3.3.0. 详见
+          docs/ecosystem-validation/2026-04-25-findings/F019-consumer-peer-dep-pin-lag-after-producer-fix.md

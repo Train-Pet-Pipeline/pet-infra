@@ -65,3 +65,20 @@ def test_on_unavailable_retry_3_times():
         task_id = logger.start(recipe=None, stage="train")
         assert task_id == "abc"
         assert m.init.call_count == 3
+
+
+def test_fallback_null_handles_missing_config_error():
+    """F016 regression: clearml's MissingConfigError (raised when no API key
+    configured) must be caught by the fallback_null policy, just like network
+    errors. Previously the except clause was narrow (ConnectionError/Timeout/
+    OSError/RuntimeError) and let MissingConfigError leak."""
+
+    class MissingConfigError(Exception):
+        """Stand-in for clearml.backend_api.session.session.MissingConfigError."""
+
+    with patch("pet_infra.experiment_logger.clearml_logger.Task") as m:
+        m.init.side_effect = MissingConfigError("ClearML not configured")
+        logger = ClearMLLogger(mode="saas", on_unavailable="fallback_null")
+        task_id = logger.start(recipe=None, stage="train")
+        assert task_id is None
+        assert logger._task is None

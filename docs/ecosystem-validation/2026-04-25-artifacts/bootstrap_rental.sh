@@ -45,6 +45,10 @@ echo "https://x-access-token:${GH_TOKEN}@github.com" > ~/.git-credentials
 export HF_HOME="${HF_HOME:-$WORKSPACE/hf-cache}"
 # F006 fix: AutoDL turbo proxy 不支持 xet protocol（CAS-server 401），强制走 HTTP fallback
 export HF_HUB_DISABLE_XET=1
+# Retro improvement (2026-04-26): default to hf-mirror.com endpoint on China rentals.
+# AutoDL 国际带宽抖动严重；hf-mirror 上 4GB Qwen 16min 内拉完。User can override
+# with HF_ENDPOINT=https://huggingface.co before sourcing this script if outside China.
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 mkdir -p "$HF_HOME/qwen2vl2b" "$HF_HOME/panns" "$WORKSPACE/raw_data"
 
 # 0.1 — clone 9 repos at matrix tag

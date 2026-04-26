@@ -2,6 +2,7 @@
 """Serial DAG runner with resume-from-cache and ExperimentLogger integration (§4.5)."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from collections.abc import Sequence
@@ -121,11 +122,22 @@ def pet_run(
 
     assert last_card is not None, "recipe has no stages"
 
-    # F012 fix: persist final ModelCard to ./model_cards/<id>.json so
-    # `pet run --replay <card_id>` can find it. Default registry is `./model_cards`
-    # (also configurable via PET_CARD_REGISTRY env var, matching replay.py).
+    # F012 + F021 fix: persist final ModelCard to <registry>/<id>.json AND dump the
+    # resolved recipe yaml alongside it, populating card.resolved_config_uri +
+    # card.hydra_config_sha so `pet run --replay <card_id>` can sha-verify the
+    # recipe and re-execute. Without this populate, replay() raises
+    # "Card has no resolved_config_uri" because the trainer-side hydra_config_sha
+    # hashed only its own kwargs, not the resolved recipe.
     registry = Path(os.environ.get("PET_CARD_REGISTRY", "./model_cards"))
     registry.mkdir(parents=True, exist_ok=True)
+    resolved_yaml_text = yaml.safe_dump(resolved_dict, sort_keys=True)
+    config_path = (registry / f"{last_card.id}_resolved_config.yaml").resolve()
+    config_path.write_text(resolved_yaml_text)
+    config_sha = hashlib.sha256(resolved_yaml_text.encode()).hexdigest()
+    last_card = last_card.model_copy(update={
+        "resolved_config_uri": f"file://{config_path}",
+        "hydra_config_sha": config_sha,
+    })
     (registry / f"{last_card.id}.json").write_text(
         last_card.model_dump_json(indent=2)
     )

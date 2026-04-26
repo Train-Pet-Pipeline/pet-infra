@@ -11,4 +11,4 @@ except ImportError as e:
         "using the tag pinned in pet-infra/docs/compatibility_matrix.yaml."
     ) from e
 
-__version__ = "2.9.3"
+__version__ = "2.9.4"

@@ -76,7 +76,9 @@ class ClearMLLogger(ExperimentLogger):
         try:
             self._task = self._init_task(task_name)
             return str(self._task.id)
-        except (ConnectionError, TimeoutError, OSError, RuntimeError) as e:
+        except Exception as e:
+            # F016: catch broadly so fallback_null also handles MissingConfigError
+            # and any other clearml-side init failure (not just network).
             return self._handle_unavailable(e)
 
     def _handle_unavailable(self, e: Exception) -> str | None:

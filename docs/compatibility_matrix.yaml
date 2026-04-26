@@ -145,21 +145,21 @@ releases:
 
   - release: "2026.11-eco-validation-fixes"
     pet_schema: "3.3.0"
-    pet_infra: "2.7.0"
+    pet_infra: "2.9.0"
     pet_data: "1.3.0"
-    pet_annotation: "2.2.0"
-    pet_train: "2.1.0"
-    pet_eval: "2.4.0"
+    pet_annotation: "2.2.2"  # F019: v2.2.1 regressed F001 images field; v2.2.2 restored + pet-schema pin bumped to v3.3.0
+    pet_train: "2.2.3"       # F019: v2.2.2 still pinned pet-schema v3.2.1; v2.2.3 bumps pin to v3.3.0 (consumer-side ShareGPTSFTSample.images)
+    pet_eval: "2.4.1"
     pet_quantize: "2.1.0"
     pet_ota: "2.2.0"
-    pet_id: "0.2.0"
+    pet_id: "0.2.2"
     clearml: ">=1.14,<2.0"
     mmengine_lite: ">=0.10,<0.12"
     hydra_core: ">=1.3,<1.4"
     rknn_toolkit2: "==2.0.0"
     rkllm_toolkit: "==1.2.0"
     notes: |
-      Ecosystem-validation 2026-04-25 rental session closeout (~3.5h on
+      Ecosystem-validation 2026-04-25 rental session closeout (~4h on
       AutoDL RTX PRO 6000 Blackwell 96GB).
 
       Phase 1 critical-path E2E shipped end-to-end:
@@ -167,26 +167,47 @@ releases:
         - Qwen2-VL-2B SFT loss 0.42→0.17 in 26s (LoRA r=16)
         - Qwen2-VL-2B full-param SFT loss 0.17→0.05 in 59s
         - DPO LoRA training rewards/margins 0.13→0.34 in 64s
+        - PANNs zero-shot audio inference 8/8 frames (via new
+          PANNsAudioInference plugin wrapping panns_inference package).
+        - 3 fusion plugins (weighted/and_gate/single_modal) recipe-switchable.
         - LocalBackendPlugin OTA manifest deployed.
 
-      Phase 2 capability matrix 38/45 items + Phase 3 cross-cutting 8/8.
-      North-Star 4-dim ≥ 3 satisfied (P/F/E/C = 4/4/4/3).
+      Phase 2 capability matrix 45/45 items + Phase 3 cross-cutting 8/8.
+      North-Star 4-dim re-evaluated (P/F/E/C = 4/4/4/4) after fixes.
 
-      14 findings catalogued (F001-F014), 12 fixed and shipped:
+      15 findings catalogued (F001-F015), 14 fixed and shipped:
         - F001 (STRUCTURAL): pet-schema v3.3.0 restored ShareGPTSFTSample.images
-          (regression introduced v3.2.0 silently broke Phase 3A VLM contract)
-        - F004 (HIGH): pet-annotation Literal accepts doubao + DoubaoProvider routed
+        - F004 (HIGH): pet-annotation Literal accepts doubao + DoubaoProvider
         - F005 (HIGH): pet-annotation parses storage_uri RFC 3986 scheme
+        - F008 (STRUCTURAL): pet-train v2.2.0 new PANNsAudioInference plugin
+          wraps official panns_inference package (replaces incompatible
+          custom MobileNetV2). Audio modality now uses standard pluggable
+          path (registries + entry-point discovery).
         - F009 (HIGH): pet-infra cli auto-discovers plugins before pet_run
         - F010 (MEDIUM): pet-train Makefile auto-inits LLaMA-Factory submodule
         - F011 (HIGH): pet-train llamafactory wrappers use run_exp(args=dict)
         - F012 (HIGH): pet-infra pet_run persists ModelCard to ./model_cards/
         - F013 (HIGH): pet-train wrapper honors finetuning_type cfg
-        - F014 (STRUCTURAL): pet-eval fusion plugins have orchestrator-compatible run()
+        - F014 (STRUCTURAL): pet-eval BaseFusionEvaluator concrete run() method
+        - F015 (MEDIUM): pet-id v0.2.1 pytest.importorskip for optional extras
         - F002/F003/F006: bootstrap_rental.sh fixes (rental env compat)
 
-      Deferred:
-        - F007 rsync slow on AutoDL int'l bandwidth (use hf-mirror.com)
-        - F008 PANNs MobileNetV2 architecture mismatch (Phase 5 audio rewrite)
+      Workaround only:
+        - F007 (LOW): AutoDL int'l bandwidth flaky → use hf-mirror.com endpoint
+          (external infra, not a code bug).
 
-      No hardware path changes. Phase 5 RK3576 deferred.
+      No hardware path changes. Phase 5 RK3576 still deferred (hardware-only).
+
+      Post-rental followup (2026-04-26):
+        - F018 (STRUCTURAL): 5 仓 7 个 release tag 装出来 importlib.metadata.version()
+          返回旧版本（pyproject.toml 未在 release PR 中 bump）。Fix-forward 走 5 仓
+          patch release（v0.2.2 / v2.2.2 / v2.2.2 / v2.4.1 / v2.9.0）+ 9 仓加
+          `release-version-consistency.yml` workflow guard 防回归。详见
+          docs/ecosystem-validation/2026-04-25-findings/F018-release-tags-ship-stale-pyproject-version.md
+        - F019 (HIGH): pet-annotation peer-dep pin (PET_SCHEMA_PIN + ci.yml) lagged
+          behind producer F001 fix; PR #22 used new ShareGPTSFTSample.images field
+          requiring pet-schema v3.3.0 but didn't bump pin → dev CI broke silently
+          → F018 agent dropped images= code instead of bumping pin. Fix-forward
+          ships pet-annotation v2.2.2 (replaces regressed v2.2.1) with images=
+          restored + PET_SCHEMA_PIN bumped to v3.3.0. 详见
+          docs/ecosystem-validation/2026-04-25-findings/F019-consumer-peer-dep-pin-lag-after-producer-fix.md

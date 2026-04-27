@@ -1,7 +1,7 @@
 # pet-infra 架构文档
 
 > 维护说明：模块结构 / 扩展点 / 已知复杂点变更时同步本文档
-> 最后对齐：v2.6.0 / 2026-04-23 (Phase 2 ecosystem optimization)
+> 最后对齐：v2.9.5 / 2026-04-27 (F017-F027 cycle)
 
 ---
 
@@ -286,7 +286,7 @@ try:
 except ImportError as e:
     raise ImportError("pet-infra requires pet-schema ...") from e
 
-__version__ = "2.6.0"
+__version__ = "2.9.5"
 ```
 
 使用 `ImportError`（非 `RuntimeError`），因为这发生在模块 import 时，不在 `register_all()` 内（见 §8 guard pattern 说明）。
@@ -336,13 +336,13 @@ tests/
 
 **评估**：微优化，当前业务场景下调用频率低，不影响正确性。如有性能需求，可将 `_inner` 提升到 `__init__` 中一次性构建，但会让 `retry_wait` 不可注入（影响可测试性）。**结论**：不值得修复。
 
-### 8.2 `replay.py` git walk via `parents[4]`
+### 8.2 `replay.py` git walk via `parents[3]`
 
 **位置**：`replay.py` `_current_git_shas()`（内部辅助函数）
 
 **现象**：通过 `subprocess` 调用 `git log` 获取 repo HEAD sha，在 site-packages install（非 editable）场景下无法定位 .git 目录，会产生 `subprocess.CalledProcessError`。
 
-**评估**：代码有 graceful fallback——异常时返回 `{}`（空 dict），`check_git_drift()` 收到空 dict 直接 return `[]`（无 drift warning）。功能正确，只是 site-packages 场景无法做 drift check，这符合预期（site-packages 安装不做开发调试）。**结论**：保持现状，已文档说明。
+**评估**：代码有 graceful fallback——异常时返回 `{}`（空 dict），`check_git_drift()` 收到空 dict 直接 return `[]`（无 drift warning）。功能正确，只是 site-packages 场景无法做 drift check，这符合预期（site-packages 安装不做开发调试）。**F024 修正**：`_current_git_shas` 读取 `parents[3]`（非旧文档中的 `parents[4]`），修正后 replay drift check 功能已验证。**结论**：保持现状，已文档说明。
 
 ---
 
@@ -354,5 +354,24 @@ tests/
 |---|---|---|
 | `__all__` 缺失声明 | MEDIUM | pet-infra 顶层 `__init__.py` 未声明 `__all__`，外部 `from pet_infra import *` 行为未定义。Phase 5 补充。|
 | `_registry_label` 约定 vs 合同 | LOW | `BaseStageRunner._registry_label` 是 ClassVar[str]，子类 MUST 设置但无运行时 enforce。可改为 `__init_subclass__` 检查或 `@abstractmethod`。|
-| pet-quantize peer-dep 硬 pin 残留 | MEDIUM | pet-quantize 当前仍有 pet-infra 硬 pin，Phase 7 修复（见 OVERVIEW.md §4 表注）。|
-| pet-ota peer-dep 硬 pin 残留 | MEDIUM | pet-ota 当前仍有 pet-infra / pet-quantize 硬 pin，Phase 8 修复。|
+| pet-quantize peer-dep 硬 pin 残留 | ✓ 已修复 Phase 7 | pet-quantize 已迁移到 β peer-dep。|
+| pet-ota peer-dep 硬 pin 残留 | ✓ 已修复 Phase 8 | pet-ota 已迁移到 β peer-dep。|
+
+---
+
+### Recent (2026-04-27)
+
+F017-F027 续租验证周期的 pet-infra 相关修复：
+
+**F021** (`pet_infra/orchestrator/runner.py`) — `pet_run()` 现在在每个 stage 执行后将 `resolved_config` dump 到磁盘并填充 `card.resolved_config_uri`；同时将 recipe 级的 `hydra_config_sha` 写入 `card`。Replay 闭环由此真正可用（之前 URI 始终为 None）。
+- 参见：`docs/ecosystem-validation/2026-04-25-findings/F021-pet-run-resolved-config-uri-not-populated.md`
+
+**F024** (`replay.py`) — `_current_git_shas()` 使用 `parents[3]`（非旧文档注释中的 `parents[4]`），并与 `pet_train.lineage.collect_git_shas()` 共享统一逻辑（hyphenated key 命名约定）。Drift detection 现已功能正常。§8.2 已更正。
+- 参见：`docs/ecosystem-validation/2026-04-25-findings/F024-git-shas-key-mismatch-and-parents-off-by-one.md`
+
+**F027** (`pet_infra/orchestrator/runner.py`) — `pet_run()` 在每个 stage 完成后调用 `experiment_logger.log_metrics(card.metrics)`。ClearML scalars 现在随每个 stage card 真正写入仪表板（之前 log_metrics 从未被 orchestrator 调用）。
+- 参见：`docs/ecosystem-validation/2026-04-25-findings/F027-runner-not-calling-log-metrics-clearml-dashboard-empty.md`
+
+**DEV_GUIDE §11.8 新增** — "Plugin-contract test 纪律：fixture-real 而非 mock-only" retro guardrail，包含 PR 模板硬要求（§14.8.2）。所有 plugin contract 修改 PR 必须包含 fixture-real 勾选项。
+
+**Matrix 2026.11** — compatibility_matrix.yaml 新增 `2026.11` 行：pet-schema 3.3.0 / pet-infra 2.9.5 / pet-train 2.2.5 / pet-eval 2.5.1 / pet-annotation 2.2.2 / pet-data 1.3.0 / pet-quantize 2.1.0 / pet-ota 2.2.0 / pet-id 0.2.2。

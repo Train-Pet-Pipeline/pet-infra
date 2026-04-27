@@ -1,7 +1,9 @@
 # Train-Pet-Pipeline 系统技术设计总览
 
 > 维护说明：`compatibility_matrix.yaml` 加行 / 依赖治理规则改动必须同步本文档
-> 最后对齐：matrix row 2026.10-ecosystem-cleanup / 2026-04-23 (Phase 10 ecosystem optimization closeout)
+> 最后对齐：matrix row 2026.11 / 2026-04-27 (F017-F027 retest cycle)
+
+> **Recent F017-F027 retest cycle (2026-04-27):** 续租验证期间发现并修复了 11 个 findings（F017-F027）。主要变更涉及 pet-infra（F021 replay resolved_config_uri + F024 parents[3] + F027 log_metrics 调用）、pet-train（F022 LF metrics 解析 + F023 DPO rewards + F024 collect_git_shas + F025 checkpoint_uri）、pet-eval（F026 audio_evaluator PANNs 默认 backend）。DEV_GUIDE §11.8 新增 "fixture-real" retro guardrail。完整 finding 文档见 `docs/ecosystem-validation/2026-04-25-findings/F0{17..27}-*.md`。
 
 ---
 
@@ -118,7 +120,7 @@ Python 无原生 peer-dep 概念，项目通过以下约定模拟：
 
 > 此表记录**两个状态**：**当前实际** (Actual) = 今天 CI workflow 跑的装序；**β 目标** (Target) = 所有 Phase 完成后的装序。`Current` 列里标了 ✓ 表示仓已迁移到 β；`(Phase N target)` 表示未迁移，本仓 Phase 会修到 β。CI workflow 路径从 `compatibility_matrix.yaml releases[-1]` 行取版本号。
 
-| 仓 | Current (2026-04-23, matrix 2026.10) | CI workflow | 迁移 Phase |
+| 仓 | Current (2026-04-27, matrix 2026.11) | CI workflow | 迁移 Phase |
 |---|---|---|---|
 | pet-schema | ✓ β (链首无 peer-dep) — 1 步 | `pet-schema/.github/workflows/ci.yml` | Phase 1 ✓ |
 | pet-infra | ✓ β (pet-schema peer) — 3 步 | `pet-infra/.github/workflows/ci.yml` | Phase 2 ✓ |

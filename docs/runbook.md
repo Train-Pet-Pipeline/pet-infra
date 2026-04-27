@@ -1,5 +1,18 @@
 # Ops Runbook
 
+> Last updated: 2026-04-27 (F018 guard rollout complete; release-version-consistency live across 9 repos)
+
+## Release Version Consistency Guard
+
+**`release-version-consistency.yml`** is now live across all 9 repos (pet-infra PR #110 + 8 sister copies). It runs on every push/PR and verifies that `__version__` in `__init__.py` matches the version in `pyproject.toml`. This guard was introduced after F018 found that v2.5.0 and v2.6.0 tags shipped with a stale `pyproject.toml` version field.
+
+If this check fails:
+1. Find the discrepancy: `grep __version__ src/<pkg>/__init__.py` vs `grep ^version pyproject.toml`
+2. Bump whichever is stale to match the tag you are releasing
+3. Commit as part of the release PR (not a separate hotfix)
+
+---
+
 ## Common Issues
 
 ### `make setup` fails

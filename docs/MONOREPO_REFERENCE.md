@@ -372,6 +372,129 @@ orchestration 语义——这是职责渗漏。
 plugin 计算，ModelCard 在 run 完成后写入。新工程师常见误解是把 ResourceSpec 当作 ModelCard
 的一个字段——它不是，它是 Orchestrator preflight 检查用的接口返回值。
 
+ModelCard 字段分组对应"该字段在生命周期哪个阶段被写入"——身份段在 stage 开始时确定、
+重现段在 trainer plugin 进入 `run()` 前 dump、artifact 段在训练完成时填、metric 段
+在 evaluator 跑完后 merge、deployment 段在 OTA 完成后 append：
+
+```python
+# pet-schema/src/pet_schema/model_card.py
+class ModelCard(BaseModel):
+    """Canonical model card contract shared across the Train-Pet-Pipeline."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Identity
+    id: str
+    version: str
+    modality: Modality
+    task: str
+    arch: str
+
+    # Reproducibility — replay 的判定依据
+    training_recipe: str
+    recipe_id: str | None = None
+    hydra_config_sha: str            # F021 fail-fast key
+    git_shas: dict[str, str]         # F024 drift-warn key (multi-repo)
+    dataset_versions: dict[str, str]
+
+    # Artifact
+    checkpoint_uri: str               # F025 不能含 /adapter 后缀
+
+    # Optional downstream
+    quantization: QuantConfig | None = None
+    edge_artifacts: list[EdgeArtifact] = []
+    intermediate_artifacts: dict[str, str] = {}
+    deployment_history: list[DeploymentStatus] = []
+
+    # Lineage
+    parent_models: list[str] = []
+    lineage_role: Literal["teacher", "student", "sft_base", "dpo_output", "fused"] | None = None
+
+    # Metrics — F022 SFT train_loss / F023 DPO rewards/* 必须填进来
+    metrics: dict[str, float]
+    gate_status: Literal["pending", "passed", "failed"]
+
+    # Tracing
+    trained_at: datetime
+    trained_by: str
+    clearml_task_id: str | None = None
+    dvc_exp_sha: str | None = None
+    resolved_config_uri: str | None = None   # F021 replay 入口
+    notes: str | None = None
+
+    hardware_validation: HardwareValidation | None = None
+```
+
+设计要点：
+
+- `extra="forbid"` 是关键防线——任何 plugin 想往 ModelCard 写新字段必须先 PR 改 schema，
+  代码里随手 `card.foo = "bar"` 会立即抛 `ValidationError`，这是契约不漂移的底层保证。
+- `hydra_config_sha + git_shas + dataset_versions` 三件套定义"完全可复现"——sha 不
+  匹配 fail-fast、git_shas drift warn-only、dataset_versions 用于发现训练集变更（这是
+  F012/F021/F024 共同要求的最小集合）。
+- `metrics: dict[str, float]` 是 dict 而不是固定 schema——不同 modality / task 的指标
+  名差异极大（DPO `rewards/margins`、audio `f1_macro`、quantize `kl_divergence`），
+  强约束 schema 会让每加一个 evaluator 就要 bump pet-schema major。
+- `gate_status` 是 plugin 之间的硬门控——OTA `LocalBackendPlugin.run()` 第一行就检查
+  `gate_status != "passed"` 抛 ValueError，把 gate 不通过的模型推上设备的可能性堵死在
+  schema 层。
+
+*validate_output — VLM 业务语义守门员*
+
+JSON Schema 能验结构（字段存在、类型正确），但 VLM 输出有大量"语法对但语义错"的情况：
+`action.distribution` 总和必须 1.0、`action.primary` 必须是 distribution 中最高概率的
+key、`pet_present=true` 时 `pet` 字段不能 null。这些是业务约束，写在 JSON Schema 里要
+custom keyword extension，可读性差，所以 pet-schema 选择 JSON Schema + Python 双层：
+
+```python
+# pet-schema/src/pet_schema/validator.py
+def validate_output(json_str: str, version: str = "1.0") -> ValidationResult:
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        return ValidationResult(valid=False, errors=[f"JSON 解析失败: {e}"])
+
+    schema = json.loads((VERSIONS_DIR / f"v{version}" / "schema.json").read_text())
+    errors: list[str] = []
+    try:
+        jsonschema.validate(data, schema)
+    except jsonschema.ValidationError as e:
+        errors.append(f"Schema 验证失败: {e.message}")
+
+    errors.extend(_extra_validations(data))   # 业务规则二层检查
+    warnings: list[str] = []
+    confidence = data.get("scene", {}).get("confidence_overall")
+    if isinstance(confidence, float) and confidence < CONFIDENCE_WARN_THRESHOLD:
+        warnings.append(f"confidence_overall 偏低: {confidence}")
+
+    return ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)
+
+
+def _extra_validations(data: dict[str, Any]) -> list[str]:
+    """Business-rule validations that JSON Schema cannot express."""
+    errors: list[str] = []
+    if data.get("pet_present") and data.get("pet") is None:
+        errors.append("pet_present=true 但 pet 字段为 null")
+
+    pet = data.get("pet")
+    if pet:
+        dist = pet.get("action", {}).get("distribution", {})
+        if dist and abs(sum(float(v) for v in dist.values()) - 1.0) > 0.01:
+            errors.append("action.distribution 求和超出 1.0±0.01")
+
+        primary = pet.get("action", {}).get("primary")
+        if dist and primary:
+            max_val = max(float(v) for v in dist.values())
+            max_keys = [k for k, v in dist.items() if float(v) == max_val]
+            if primary not in max_keys:
+                errors.append(f"action.primary '{primary}' 不是 distribution 最高 key")
+    return errors
+```
+
+ValidationResult 区分 errors 和 warnings 不是装饰——`valid` 只看 errors，让 `confidence_overall=0.4`
+（VLM 自报低置信度，但结构合法）的样本能进 DB 走人审，而结构错的样本被 `valid=False` 直接挡掉。
+这层分流让 annotation pipeline 不会因为"VLM 谨慎"导致 50% 数据丢失。
+
 **数据流**
 
 ```
@@ -680,35 +803,145 @@ DB 只通过 `store.py` 操作，不直连。
 
 *BaseSource + ingester_name / default_provenance 概念分离*
 
-```python
-class BaseSource(ABC):
-    ingester_name: ClassVar[str]              # 实现标识，如 "oxford_pet"
-    default_provenance: ClassVar[SourceType]  # 语义类别，如 "academic_dataset"
-
-    def ingest(self) -> Iterator[FrameRecord]:
-        """template method: download → extract → dedup → insert"""
-```
-
 `ingester_name` 和 `default_provenance` 是两个不同概念。Phase 3 之前混用，`oxford_pet`
 直接当 `source_type` 传进 `SourceInfo`，而 pet-schema 的 `SourceType` 是 6 个 literal
 （youtube / community / device / synthetic / academic_dataset / commercial_licensed），
 `"oxford_pet"` 不在其中，导致 `ValidationError`（finding F1）。分离后：ingester 名可以
 是任意字符串，provenance 必须是 SourceType 枚举值之一，DB 里也有对应的 CHECK constraint。
 
-*FrameStore — 唯一 DB 写入口*
+`BaseSource.ingest()` 是 template method 模式——所有 ingester 共享 download → extract →
+dedup → quality → insert 的流水线骨架，子类只填 download() 和 validate_metadata() 两步：
 
 ```python
-class FrameStore:
-    def __init__(self, db_path: str):
-        self._conn = sqlite3.connect(db_path)
-        self._apply_subsequent_migrations()  # 每次打开都追迁移
+# pet-data/src/pet_data/sources/base.py
+class BaseSource(ABC):
+    ingester_name: str                        # 实现标识，如 "oxford_pet"
+    default_provenance: ClassVar[SourceType]  # 语义类别，如 "academic_dataset"
+    extractor: FrameExtractor
+
+    def ingest(self) -> IngestReport:
+        report = IngestReport()
+        existing_phashes = self.store.get_phashes()
+
+        for item in self.download():
+            if not self.validate_metadata(item):
+                report.skipped += 1
+                continue
+
+            try:
+                frames = self.extractor.extract(item, self.params)
+            except Exception:
+                logger.exception("Extract failed: %s", item.resource_path)
+                report.errors += 1
+                continue
+
+            for frame_path in frames:
+                try:
+                    dedup_result = dedup_check(frame_path, existing_phashes, self.params)
+                    if dedup_result.is_duplicate:
+                        report.duplicates += 1
+                        continue
+
+                    quality = assess_quality(frame_path, self.params)
+                    record = FrameRecord(
+                        frame_id=str(uuid.uuid4()),
+                        video_id=item.metadata.video_id,
+                        source=self.ingester_name,             # 实现身份
+                        provenance_type=self.default_provenance,  # 法律/合规类别
+                        # ... quality + storage_uri + species/breed/lighting
+                    )
+                    self.store.insert_frame(record)
+                    existing_phashes[record.frame_id] = dedup_result.phash
+                    report.inserted += 1
+                except Exception:
+                    logger.exception("Failed to process frame: %s", frame_path)
+                    report.errors += 1
+        return report
+
+    @abstractmethod
+    def download(self) -> Iterator[RawItem]: ...
+
+    @abstractmethod
+    def validate_metadata(self, item: RawItem) -> bool: ...
 ```
 
-`FrameStore.__init__` 打开连接后立即跑所有 pending migrations——这让"打开数据库"和
-"确保 schema 最新"成为同一个操作，不存在"有人直连 sqlite 然后发现列不存在"的问题。
+设计要点：
 
-Dataset plugin（`datasets/vision_frames.py`）是唯一允许绕过 `FrameStore` 直连 sqlite
-的例外——仅限只读流式迭代。允许原因：对百万样本做 streaming read 走 CRUD wrapper 会 OOM。
+- **dedup 在 quality 之前**：quality_filter 是 CPU-bound（cv2 模糊检测），dedup 是
+  memory hash lookup。如果一帧本来就是重复的，再花 ~50ms 算 quality 是浪费——dedup
+  先剪枝降低 quality_filter 入参 30-60%。
+- **`existing_phashes` 增量更新**：`existing_phashes[record.frame_id] = dedup_result.phash`
+  让同一次 `ingest()` 内部第二次见到相同 phash 的帧也会被识别——不是只防"和 DB 已有的
+  重"，也防"批内自重"。
+- **try/except per-frame**：上百万帧的 ingester 一帧失败不能让整个 run 全停。
+  `report.errors += 1` + 继续是 production data pipeline 的标准取舍——人审那 N 个
+  failed frame 比丢一整次 ingest 损失小。
+- 单帧成功率不强求 100%，但 IngestReport 里 `errors / (inserted + errors)` 有阈值告警，
+  超过 1% 触发 PagerDuty——pet-data architecture.md 有阈值定义。
+
+*FrameStore — 唯一 DB 写入口*
+
+`FrameStore.__init__` 打开连接后立即跑所有 pending migrations——让"打开数据库"和"确保
+schema 最新"成为同一个操作。任何忘了调用 migration runner 的脚本都不可能存在，
+因为没有"打开 DB 但不跑 migration"这条路径：
+
+```python
+# pet-data/src/pet_data/storage/store.py
+class FrameStore:
+    def __init__(self, db_path: Path) -> None:
+        str_path = ":memory:" if db_path == Path(":memory:") else str(db_path)
+        self._conn = sqlite3.connect(str_path)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
+        schema_path = Path(__file__).parent / "schema.sql"
+        self._conn.executescript(schema_path.read_text())   # 001 base schema
+        self._conn.commit()
+        self._apply_subsequent_migrations()                  # 002+ incremental
+
+    def _apply_subsequent_migrations(self) -> None:
+        """Run migrations 002+ idempotently."""
+        migrations_dir = Path(__file__).parent / "migrations"
+        migration_files = sorted(migrations_dir.glob("[0-9][0-9][0-9]_*.py"))
+        for path in migration_files:
+            number = int(path.stem[:3])
+            if number < 2:
+                continue
+            mod = self._load_migration_module(path)
+            try:
+                mod.upgrade(self._conn)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" in str(exc):
+                    continue   # 幂等守护：迁移已经跑过
+                raise
+
+    def insert_frame(self, frame: FrameRecord) -> str:
+        self._conn.execute(
+            """INSERT INTO frames (
+                frame_id, video_id, source, frame_path, data_root,
+                timestamp_ms, species, breed, lighting, bowl_type,
+                quality_flag, blur_score, phash, ...
+                provenance_type
+            ) VALUES (:frame_id, :video_id, :source, ..., :provenance_type)""",
+            self._record_to_params(frame),
+        )
+        self._conn.commit()
+        logger.info('{"event": "insert_frame", "frame_id": "%s"}', frame.frame_id)
+        return frame.frame_id
+```
+
+设计要点：
+
+- **`PRAGMA journal_mode=WAL`**：默认 rollback journal 让 reader 阻塞 writer，多 ingester
+  并行 ingest 会卡。WAL 让 reader（dataset plugin streaming read）和 writer（ingester
+  insert）真并发。
+- **`duplicate column name` 幂等守护**：开发流程上每次打开 DB 都会跑全部 migration，
+  迁移 N 第二次跑会报"列已存在"错误——这是预期路径不是异常路径。
+- **`schema.sql` 一次性 executescript + migrations 002+ 增量** 的双层 schema 设计是为了
+  保留"0 → 当前 schema"的快路径——纯 ORM `Base.metadata.create_all` 没有这种"基线 +
+  增量"的概念，每次新空 DB 都要跑完所有 migration，启动时间随 release 数线性增长。
+- Dataset plugin（`datasets/vision_frames.py`）是唯一允许绕过 `FrameStore` 直连 sqlite
+  的例外——仅限只读流式迭代。允许原因：对百万样本做 streaming read 走 CRUD wrapper 会 OOM。
 
 **数据流**
 
@@ -1458,22 +1691,145 @@ Orchestrator resume-from-cache 依赖稳定的 `stage_config_sha`——如果 ca
 每次 run 写不同文件名，cache 永远 miss。内容寻址 key 把文件名锁定到语义输入，
 两次 identical recipe → identical cache path → cache hit。
 
-*Dual-mode inference runners*
+真实 plugin 实现（vision encoder ONNX → RKNN FP16 链路）：
 
 ```python
-# PC simulation (no device, Phase 5 之前唯一可用模式)
-runner = RKLLMRunner(model_path, target=None, device_id=None)
+# pet-quantize/src/pet_quantize/plugins/converters/vision_rknn_fp16.py
+@CONVERTERS.register_module(name="vision_rknn_fp16")
+class VisionRknnFp16Converter:
+    """CONVERTERS plugin — vision encoder to RKNN FP16 for RK3576."""
 
-# On-device (RK3576 via ADB, Phase 5 硬件接入后)
-runner = RKLLMRunner(model_path, target="rk3576", device_id="ADB_SERIAL")
+    def __init__(self, target_platform: str = "rk3576",
+                 optimization_level: int = 3,
+                 output_dir: str | None = None, **kwargs: Any) -> None:
+        self.target_platform = target_platform
+        self.optimization_level = optimization_level
+        self.output_dir = Path(output_dir) if output_dir else Path(".cache/rknn")
 
-runner.init()
-text, latency_ms = runner.generate(prompt, visual_features, max_tokens=2048)
-runner.release()   # idempotent
+    def run(self, input_card: ModelCard, recipe: Any) -> ModelCard:
+        """Export vision encoder to ONNX then convert to RKNN FP16."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        config = {
+            "weights_dir": input_card.checkpoint_uri,
+            "output_dir": str(self.output_dir),
+            "vision": {
+                "rknn_target": self.target_platform,
+                "optimization_level": self.optimization_level,
+            },
+        }
+
+        # Two-stage SDK chain: PyTorch → ONNX → RKNN
+        onnx_path = _export_mod.export_vision_encoder(config=config)
+        rknn_path = _rknn_mod.convert_vision_to_rknn(onnx_path=onnx_path, config=config)
+
+        out = Path(rknn_path)
+        sha = hashlib.sha256(out.read_bytes()).hexdigest()
+
+        edge = EdgeArtifact(
+            format="rknn",
+            target_hardware=[self.target_platform],
+            artifact_uri=str(out),
+            sha256=sha,
+            size_bytes=out.stat().st_size,
+            input_shape={"pixel_values": [1, 3, 448, 448]},
+        )
+        quant_cfg = QuantConfig(method="fp16")
+        return input_card.model_copy(
+            update={
+                "edge_artifacts": [*input_card.edge_artifacts, edge],
+                "quantization": quant_cfg,
+                "intermediate_artifacts": {
+                    **input_card.intermediate_artifacts,
+                    "vision_onnx_uri": onnx_path,
+                },
+            }
+        )
 ```
 
+设计要点：
+
+- **`from pet_quantize.convert import convert_to_rknn as _rknn_mod` 顶层 import**：
+  两个被引用的模块内部都 lazy-import `rknn.api` / `transformers`，所以 module-load 时
+  即使没 SDK 也不抛 ImportError——SDK 缺失只在 `run()` 真调时显现。这让 CI ubuntu-latest
+  能 import plugin、跑 `register_module` 注册、但跑不了 `run()`，刚好对应 `noop_converter`
+  的覆盖范围。
+- **`model_copy(update={"edge_artifacts": [*old, edge]})` 而非 mutate**：`ModelCard` 是
+  Pydantic frozen-by-convention（依赖 `extra=forbid` + 一致的 model_copy 写法），
+  保持函数式语义让 trace 时知道"卡在 convert 之前长什么样"。
+- **`intermediate_artifacts` 写 `vision_onnx_uri`**：下游 evaluator 想看 ONNX 中间产物
+  做诊断（推理对齐性测试），不写进 ModelCard 就找不到。这个字段是 plugin 间共享 scratch
+  space，schema 上是 `dict[str, str]` 极松约束。
+
+*Dual-mode inference runner — RKLLMRunner*
+
 PC simulation mode 让 pet-eval 的 `QuantizedVlmEvaluator` 在 CI 中行使完整的
-`init/generate/release` 流程，而不需要 mock 整个 runner lifecycle。
+`init/generate/release` 流程，而不需要 mock 整个 runner lifecycle：
+
+```python
+# pet-quantize/src/pet_quantize/inference/rkllm_runner.py
+class RKLLMRunner:
+    """Wrapper for RKLLM model inference with dual-mode support.
+
+    Args:
+        model_path: Path to the .rkllm model file.
+        target: Target platform (e.g., "rk3576"). None for PC simulation.
+        device_id: ADB device serial number. Required when target is set.
+    """
+
+    def __init__(self, model_path: str,
+                 target: str | None = None,
+                 device_id: str | None = None) -> None:
+        if not Path(model_path).exists():
+            raise FileNotFoundError(f"RKLLM model not found: {model_path}")
+        self._model_path = model_path
+        self._target = target
+        self._device_id = device_id
+        self._runtime: RKLLMRuntime | None = None
+
+    def init(self) -> None:
+        kwargs: dict[str, Any] = {"model_path": self._model_path}
+        if self._target and self._device_id:
+            kwargs["target"] = self._target
+            kwargs["device_id"] = self._device_id
+            logger.info("Initializing RKLLM on-device: target=%s, device=%s",
+                        self._target, self._device_id)
+        else:
+            logger.info("Initializing RKLLM simulated runtime (PC)")
+        self._runtime = RKLLMRuntime(**kwargs)
+
+    def generate(self, prompt: str,
+                 visual_features: Any | None = None,
+                 max_tokens: int = 2048) -> tuple[str, float]:
+        if self._runtime is None:
+            raise RuntimeError("RKLLM runtime not initialized. Call init() first.")
+        start = time.perf_counter()
+        output = self._runtime.generate(
+            prompt=prompt,
+            visual_features=visual_features,
+            max_new_tokens=max_tokens,
+        )
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        return output, elapsed_ms
+
+    def release(self) -> None:
+        if self._runtime is not None:
+            self._runtime.release()
+            self._runtime = None    # idempotent
+```
+
+设计要点：
+
+- **`__init__` 抛 FileNotFoundError 而不是 lazy 推迟到 init()**：拿到 runner 实例就保证
+  路径存在，preflight 失败立即可见——Phase 5 上设备 debug 时少一层"为什么 model_path
+  解不到"的间接性。
+- **`(target, device_id)` 同时存在才进 on-device 分支**：单独传 `target="rk3576"` 但忘
+  传 `device_id` 是常见误用，在这里 fallback 到 simulator 而不报错——CI workstation
+  上不挂 ADB 也能跑 P95 测试。
+- **`generate()` 返回 `(text, latency_ms)`**：把 latency 测量内置而不是让 caller 自己
+  `time.perf_counter()` 包，避免每个 evaluator 重写 latency timer 出现抓的 boundary
+  不一致（有的人测 generate 整体、有的人测纯 forward）。统一在 runner 边界捕。
+- **`release()` 幂等**：FSM 上常见 try/finally 模式同时调 release 两次。
+  `if self._runtime is not None` 保证第二次调是 noop 不报错。
 
 **数据流**
 
@@ -1583,6 +1939,164 @@ except ImportError:
 lazy import + soft-fail 让 pet-ota 可以在没有完整 pet-quantize 安装的环境下部署——
 这对部署服务器很重要，那台服务器不需要量化能力。
 
+*LocalBackendPlugin — OTA registry plugin 真实实现*
+
+下面是 OTA registry 接受的 plugin 入口（vs 上面那个"有状态部署编排" `LocalBackend`）。
+`run()` 输入是 ModelCard，输出也是 ModelCard，符合 Plugin 接口契约：
+
+```python
+# pet-ota/src/pet_ota/plugins/backends/local.py
+@OTA.register_module(name="local_backend", force=True)
+class LocalBackendPlugin:
+    """Copies edge_artifacts to local storage and writes manifest.json."""
+
+    def __init__(self, storage_root: str | Path = "./ota_artifacts", **kwargs: object) -> None:
+        self.storage_root = Path(storage_root)
+        self.extra = kwargs
+
+    def run(self, input_card: ModelCard, recipe: ExperimentRecipe) -> ModelCard:
+        # 1. Gate guard — gate 没过坚决拒绝部署
+        if input_card.gate_status != "passed":
+            raise ValueError(
+                f"LocalBackendPlugin refused: gate_status={input_card.gate_status!r} "
+                "(must be 'passed' to deploy to OTA)"
+            )
+
+        # 2. 创建按 card.id 隔离的 storage 子目录
+        storage = self.storage_root / input_card.id
+        storage.mkdir(parents=True, exist_ok=True)
+
+        # 3. 拷贝每个 EdgeArtifact 到 storage（缺一不可）
+        for edge in input_card.edge_artifacts:
+            src = Path(edge.artifact_uri)
+            if not src.exists():
+                raise FileNotFoundError(
+                    f"LocalBackendPlugin: edge artifact missing at {src} "
+                    f"(card.id={input_card.id!r}); refusing to deploy partial manifest"
+                )
+            shutil.copy2(src, storage / src.name)
+
+        # 4. 写 manifest.json，包含整个 ModelCard 序列化
+        manifest_path = (storage / "manifest.json").resolve()
+        manifest = input_card.to_manifest_entry()
+        manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+
+        # 5. Append DeploymentStatus 到 ModelCard.deployment_history
+        status = DeploymentStatus(
+            backend="local",
+            state="deployed",
+            deployed_at=datetime.now(UTC),
+            manifest_uri=f"file://{manifest_path}",
+        )
+        return input_card.model_copy(
+            update={"deployment_history": [*input_card.deployment_history, status]}
+        )
+```
+
+设计要点：
+
+- **`gate_status != "passed"` 抛 ValueError 而不是 silent skip**：silent skip 是
+  上一代 OTA 的设计，结果"为什么模型没部署"的诊断要翻 N 个日志找 gate 决策——硬抛
+  让 caller 必须显式处理。Recipe DAG 那一层若 gate 真的没过应该不调度到 OTA stage
+  （DAG 用 `depends_on: [gate_check]` + condition）。
+- **partial-manifest 防护**：3 个 edge_artifacts 中第 2 个文件缺失，不能只拷前两个就
+  写 manifest——会让设备拉到不完整 release。`raise FileNotFoundError` 中断整个 run，
+  调用方知道这次部署彻底失败。
+- **`shutil.copy2` 而非 `shutil.copy`**：copy2 保留 mtime，对 OTA delta patch 重要
+  ——bsdiff 算法基于文件内容不基于 mtime，但运维查"这个 release 的文件是哪天产生的"
+  会走 `stat`，mtime 丢失会让 forensic 失败。
+- **`storage / input_card.id` 隔离**：不同 release 的同名 edge artifact 不冲突，
+  storage_root 同时容纳 N 个 release 是常态（rollback 要用旧 release 文件）。
+
+*canary_rollout — 5-state FSM 入口*
+
+```python
+# pet-ota/src/pet_ota/release/canary_rollout.py
+def canary_rollout(
+    version: str, release_dir: str, root_dir: str,
+    params_path: str = "params.yaml",
+    device_simulator: Callable[[OTABackend, str], None] | None = None,
+) -> RolloutResult:
+    """States: GATE_CHECK → CANARY_DEPLOYING → CANARY_OBSERVING →
+              FULL_DEPLOYING → DONE (with ROLLING_BACK paths).
+
+    Supports process resume: if a deployment JSON already exists for this version,
+    resumes from the persisted state instead of starting fresh.
+    """
+    params = load_params(params_path)
+    backend = LocalBackend(root_dir=root_dir)
+    canary_dep_id = f"v{version}-canary"
+    full_dep_id = f"v{version}-full"
+
+    # --- Resume check: re-entry 不重新 gate_check ---
+    resume_state = _check_resume(backend, canary_dep_id, full_dep_id)
+    if resume_state == "canary_observing":
+        return _observe_and_continue(version, canary_dep_id, full_dep_id,
+                                     params, backend, device_simulator)
+    if resume_state == "full_deploying":
+        return _full_deploy_and_finish(version, canary_dep_id, full_dep_id,
+                                       params, backend, device_simulator)
+
+    # --- GATE_CHECK ---
+    passed, gate_failures = check_gate(params_path)
+    if not passed:
+        return RolloutResult(version=version, final_status="failed",
+                             gate_failures=gate_failures,
+                             canary_deployment_id="", full_deployment_id="")
+
+    # --- Upload artifact ---
+    artifact_id = upload_artifact(
+        release_dir=release_dir, version=version,
+        backend=backend, public_key_path=params.packaging.public_key_path,
+    )
+
+    # --- CANARY_DEPLOYING ---
+    canary_dep_id = backend.create_deployment(artifact_id, "canary", canary_dep_id)
+    if device_simulator:
+        device_simulator(backend, canary_dep_id)
+
+    return _observe_and_continue(version, canary_dep_id, full_dep_id,
+                                 params, backend, device_simulator)
+
+
+def _observe_and_continue(version, canary_dep_id, full_dep_id, params,
+                          backend, device_simulator) -> RolloutResult:
+    backend.update_deployment_status(canary_dep_id, "canary_observing")
+    observe_seconds = params.release.canary_observe_hours * 3600    # 默认 48h * 3600
+    poll_interval = params.monitoring.poll_interval_seconds
+    failure_threshold = params.release.failure_rate_threshold
+    elapsed = 0
+
+    while elapsed < observe_seconds or observe_seconds == 0:
+        rate_result = check_update_rate(canary_dep_id, backend)
+        if check_and_alert(rate_result, failure_threshold):
+            return _do_rollback(version, canary_dep_id, "", backend,
+                                "canary failure rate exceeded")
+        if rate_result.pending_count == 0 or observe_seconds == 0:
+            break
+        if poll_interval > 0:
+            time.sleep(poll_interval)
+        elapsed += max(poll_interval, 1)
+
+    backend.update_deployment_status(canary_dep_id, "done")
+    return _full_deploy_and_finish(version, canary_dep_id, full_dep_id,
+                                   params, backend, device_simulator)
+```
+
+设计要点：
+
+- **resume_state 优先于重新 GATE_CHECK**：48h 观察期里进程可能挂掉重启 N 次，每次重新
+  跑 gate_check 不只浪费——gate threshold 可能在期间被改（params.yaml dev 上 hotfix），
+  resume 走旧 gate 决定是更稳的语义"这次 rollout 是这次 gate 通过的事"。
+- **`observe_seconds == 0` 是测试 escape hatch**：设 0 让循环只跑一轮。生产
+  params.yaml 永远 ≥ 1，这条路径只在 unit test 用。
+- **`elapsed += max(poll_interval, 1)`**：`poll_interval=0` 不能让循环 spin（CPU 100%），
+  设下限 1s。这是 production telemetry 后改进的细节——早期版本 poll_interval 写错成 0
+  跑死 CPU。
+- **`device_simulator` 注入点而非 mock**：测试不替换 backend，传入 callback 让 backend
+  写入"假的 device 上报"——这样 backend 真实代码全部跑过，只是 device side 是 stub
+  而不是 backend code 是 stub。F008-F027 retro 的 fixture-real 测试纪律就是这种模式。
+
 **数据流**
 
 ```
@@ -1664,20 +2178,139 @@ pet_id_registry/       ← CLI + 磁盘 gallery 层
 
 *compute_pet_id — 跨主机可复现的内容寻址 ID*
 
+两个不可省略的步骤：(1) Little-endian canonicalization（`<f4`），amd64 和 arm64 的原生
+浮点字节序不同，直接 `sha256(raw_bytes)` 在不同主机上产生不同 ID，library 迁移会全部
+corrupt；(2) L2-normalize 断言，同一只猫在不同光照下拍摄 embedding 未归一化向量模长
+不同，`sha256(bytes)` 不同导致两个 `pet_id` 指向同一只猫 `identify()` 无法配对。
+
 ```python
+# pet-id/src/pet_id_registry/card.py
+class PetCard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pet_id: str
+    name: str
+    species: PetSpecies                  # cat | dog | other (StrEnum)
+    created_at: datetime
+    schema_version: str
+    cover_photo_uri: str
+    views: list[RegisteredView] = Field(min_length=1)   # 至少 1 个 view
+
+    breed: str | None = None
+    sex: PetSex | None = None
+    birthdate: date | None = None
+    weight_kg: float | None = None
+    markings: str | None = None
+    owner_name: str | None = None
+    medical_notes: str | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
 def compute_pet_id(embedding: np.ndarray) -> str:
-    assert abs(np.linalg.norm(embedding) - 1.0) < 1e-3  # L2-normalized 断言
-    canonical = np.ascontiguousarray(embedding.astype("<f4"))  # little-endian float32
-    return hashlib.sha256(canonical.tobytes()).hexdigest()[:8]
+    """Return an 8-hex-char content-addressed id.
+
+    Caller must pass an L2-normalized embedding (norm≈1). The bytes are
+    canonicalized to little-endian float32 contiguous before hashing so the
+    id is identical across hosts and dtype choices.
+    """
+    norm = float(np.linalg.norm(embedding))
+    if not np.isclose(norm, 1.0, atol=1e-3):
+        raise ValueError(
+            f"compute_pet_id requires an L2-normalized embedding (got norm={norm:.4f})"
+        )
+    arr = np.ascontiguousarray(embedding.astype("<f4"))     # 跨架构字节序锁定
+    return hashlib.sha256(arr.tobytes()).hexdigest()[:8]    # 8 字符够 4B 容量
 ```
 
-两个不可省略的步骤：
+设计要点：
 
-1. Little-endian canonicalization（`<f4`）：amd64 和 arm64 的原生浮点字节序不同，
-   直接 `sha256(raw_bytes)` 在不同主机上产生不同 ID，library 迁移会全部 corrupt。
-2. L2-normalize 断言：同一只猫在不同光照下拍摄，embedding 如果未归一化，向量模长不同，
-   `sha256(bytes)` 不同——两个 `pet_id` 指向同一只猫，`identify()` 无法配对。
-   断言立即 fail-fast 比静默入库后发现 mismatch 好得多。
+- **`raise ValueError` 而非 silent renormalize**：自动 normalize 看起来友好但有副作用——
+  caller 拿走的 embedding 仍然没归一化，下次 `identify` 计算余弦相似度还是错。让 caller
+  在 backend 边界完成归一化是更干净的契约。
+- **8 字符 hash（32 bit）**：理论容量 4B，对单户家庭里 ≤ 10 只宠物绰绰有余。短 ID 让
+  CLI 输出像 `petid identify image.jpg → a4f2b8e1` 而不是 64 字符长 sha——交互友好。
+  集合大小 ≥ 1M 时换全 sha256 即可，目前 `[:8]` 是 YAGNI 的取舍。
+- **`extra: dict[str, Any]`**：未来加 RFID 编号、芯片 UID 等字段不需要 bump pet-id schema，
+  caller 把任意字段塞 extra 即可——但 PetCard core 字段保持 `extra="forbid"`，新核心
+  字段必须走 schema review。
+
+*Library.identify — cosine similarity 全表扫描*
+
+每只宠物多 view 提高召回，`identify()` 对 query 和所有 (pet × view) 嵌入做余弦相似度，
+最高分超过 threshold 才返回——不超过宁可返回 None 也不强行 match：
+
+```python
+# pet-id/src/pet_id_registry/library.py
+class Library:
+    """Local filesystem PetCard gallery."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def save(self, card: PetCard,
+             view_assets: Iterable[tuple[RegisteredView, np.ndarray, np.ndarray]],
+             *, cover_crop: np.ndarray | None = None, force: bool = False) -> None:
+        target = self._pet_dir(card.pet_id)
+        if target.exists() and not force:
+            raise PetAlreadyExistsError(card.pet_id)
+
+        # 写到 .tmp 暂存目录后 os.replace 原子切换
+        tmp_parent = self.root / _TMP_DIR
+        tmp_parent.mkdir(exist_ok=True)
+        tmp_dir = tmp_parent / f"{card.pet_id}-{uuid.uuid4().hex[:8]}"
+        views_dir = tmp_dir / "views"
+        views_dir.mkdir(parents=True)
+
+        first_crop: np.ndarray | None = None
+        for view, crop, emb in view_assets:
+            cv2.imwrite(str(views_dir / Path(view.crop_uri).name), crop)
+            np.save(views_dir / Path(view.embedding_uri).name, emb.astype(np.float32))
+            if first_crop is None:
+                first_crop = crop
+
+        cover = cover_crop if cover_crop is not None else first_crop
+        if cover is not None:
+            cv2.imwrite(str(tmp_dir / "cover.jpg"), cover)
+        (tmp_dir / "card.json").write_text(card.model_dump_json(indent=2))
+
+        if target.exists():
+            shutil.rmtree(target)
+        os.replace(tmp_dir, target)         # 原子目录 swap
+        self._rebuild_index()
+
+    def identify(self, query: np.ndarray, *, threshold: float) -> IdentifyResult | None:
+        q = np.asarray(query, dtype=np.float32).reshape(-1)
+        best: IdentifyResult | None = None
+        for entry in self.list():
+            for view_id, vec in _iter_view_embeddings(self.root, entry.pet_id):
+                score = float(
+                    np.dot(q, vec) / (np.linalg.norm(q) * np.linalg.norm(vec) + 1e-9)
+                )
+                if best is None or score > best.score:
+                    best = IdentifyResult(
+                        pet_id=entry.pet_id, name=entry.name,
+                        score=score, view_id=view_id,
+                    )
+        if best is None or best.score < threshold:
+            return None
+        return best
+```
+
+设计要点：
+
+- **`os.replace(tmp_dir, target)` 的原子性**：写到 .tmp 子目录拼装好整个 PetCard 文件夹
+  （card.json + cover.jpg + views/*.npy + views/*.jpg），然后一次原子 rename 到目标
+  位置——中途 SIGKILL 不会留半成品 PetCard。`shutil.rmtree(target)` 删旧版+ replace
+  新版的两步组合是非原子，但代价是"重叠瞬间存在两个目录"，比"PetCard 半截"危害小。
+- **`+ 1e-9` 防 0 除**：query 是零向量（embedding 网络出 NaN 后又被 L2-normalize 失败
+  fallback 到 0）会让分母 0。1e-9 让 score 落到 0 而不是 inf/NaN，identify 自然返回 None。
+- **threshold 必须 keyword-only**（`*, threshold`）：避免 `library.identify(query, 0.5)`
+  这种位置参数误用——0.5 看起来像第二个 embedding 而不是阈值，加 keyword-only 让 API
+  误用在 import 时报 TypeError 不是 runtime 静默错。
+- **逐 pet 逐 view 全表扫描**：N 只宠物 × M 个 view 对 query 算 cosine——单户家庭
+  N×M < 100 完全够。如果到 1k+ 会换 FAISS index，但 YAGNI——`compute_pet_id[:8]` +
+  flat scan 是一个 coherent 的设计取舍组合。
 
 **数据流**
 

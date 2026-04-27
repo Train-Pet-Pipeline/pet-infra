@@ -2,6 +2,16 @@
 
 Shared infrastructure for Train-Pet-Pipeline: Docker, CI, development environment (cross-cutting all repos).
 
+## Recent (2026-04-27 续租 cycle)
+
+- **v2.9.5** — docs patch: Part B final report, DEV_GUIDE §11.8 retro guardrail, and PR template rollout to all 9 repos.
+- **v2.9.4** — F027 ClearML metrics forwarding + matrix 2026.11 bump.
+- **v2.9.3** — F024 replay parents fix + F025/F026 finding docs.
+- **v2.9.2** — F023 DPO reward collection fix.
+- **v2.9.1** — F022 LLaMA-Factory metric capture fix.
+
+Full finding docs at [`docs/ecosystem-validation/2026-04-25-findings/F017-F027`](docs/ecosystem-validation/2026-04-25-findings/). See DEV_GUIDE §11.8 for the retro guardrail (fixture-real test requirement introduced after this finding chain).
+
 ## Prerequisites
 
 **pet-schema** is a peer dependency (β style per DEV_GUIDE §11). You must install it separately

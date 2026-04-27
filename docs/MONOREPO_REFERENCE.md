@@ -4,6 +4,153 @@
 
 ---
 
+## 新人入门指南（先读这里）
+
+如果你是第一次接触这个项目，下面 5 个小节按这个顺序读，大约 30 分钟可以建立全局图景。
+之后你可以根据自己的角色跳到对应的深读部分（§3 是按仓深读，§7 是用法实战）。
+
+### 这个项目在做什么
+
+我们在做一台**智能宠物喂食器**。它有摄像头和喂食仓，能识别"猫在吃饭 / 猫在嗅探不吃 /
+没有猫"等行为，自动调节喂食策略。所有 AI 推理跑在设备上的 Rockchip RK3576 NPU——
+不上传到云端，因为：(1) 用户不愿意把家里摄像头视频传出去；(2) 网络断了喂食器还得能用；
+(3) 算力费云比 NPU 算贵 100 倍。
+
+要在 NPU 上跑得动，模型必须**很小很快**——典型的端侧 VLM 是 Qwen2-VL-2B 量化到 W8A8（≤2 GB
+权重，≤200 ms 单推理）。从开箱即用的通用 VLM 到这种规格，要经过：采集真实宠物视频 → 用大模型
+打标 → 训练小模型 → 评估 → 量化 → 推送到设备。每一步都是一个独立的工程问题，所以拆成 9 个
+git 仓库，每个仓库专注一段：
+
+```
+原始视频 ──► pet-data ──► pet-annotation ──► pet-train ──► pet-eval ──► pet-quantize ──► pet-ota ──► 设备
+                                                          ↑
+                              pet-schema  ←────────────  契约定义所有仓的数据结构
+                              pet-infra   ←────────────  Orchestrator 串起所有 stage
+                              pet-id      ←────────────  独立的"识别这只猫"CLI 工具
+```
+
+下面是各仓一句话职责（深读看 §3）：
+
+| 仓 | 一句话职责 | 类比 |
+|---|---|---|
+| **pet-schema** | 定义所有跨仓数据类型（Pydantic） | 像 protobuf .proto 文件 |
+| **pet-infra** | Orchestrator + Plugin Registry + ClearML 实验追踪 | 像 MLflow + Airflow 的薄合体 |
+| **pet-data** | 从 YouTube/学术数据集采集视频帧，去重、质检 | 像 dvc 管理的数据 ingester |
+| **pet-annotation** | 用 Doubao/Qwen-VL 给帧打标，4 范式（LLM/分类/规则/人审） | 像 Label Studio + 自动 VLM 打标 |
+| **pet-train** | 调 LLaMA-Factory 跑 SFT/DPO；音频 CNN 训练 | 像 transformers Trainer 包了一层 |
+| **pet-eval** | VLM/Audio/Vision evaluator + gate（pass/fail 决策） | 像 lm-eval-harness + 业务 gate |
+| **pet-quantize** | RKNN/RKLLM 量化 + 端侧打包签名 | 像 ONNX → TensorRT 但目标是 Rockchip |
+| **pet-ota** | Canary rollout + delta patch 推到设备 | 像 Mender/Balena |
+| **pet-id** | 独立 CLI：注册一只宠物、识别照片里的宠物 | 像 face_recognition 命令行版 |
+
+### 你应该先读哪些章节（按角色）
+
+| 你是谁 | 30 分钟路径 | 接着深读 |
+|---|---|---|
+| **新加入项目的工程师** | 入门指南全部 5 节 + §1 + §7.1 | §3 的你负责的那个仓 |
+| **算法工程师**（要加新 trainer/evaluator） | 入门指南 + §4 Plugin 系统 | §3.5 pet-train、§3.6 pet-eval、§7.4 |
+| **MLOps**（部署/CI/replay） | 入门指南 + §6 + §7.2 | §3.2 pet-infra |
+| **数据工程师**（加新 ingester） | 入门指南 + §3.3 pet-data | §3.4 pet-annotation |
+| **量化/嵌入式**（加新 backend） | 入门指南 + §3.7 + §3.8 | §4 Plugin 系统 |
+| **代码评审者** | 入门指南 + §1 + §5 | DEV_GUIDE §11.8 retro guardrail |
+
+### 5 分钟跑通一次（最小工作示例）
+
+下面这条路径让你**端到端完成一次** SFT 训练 + 评估，在一台普通 Linux/Mac 上几分钟内出结果。
+它使用 `recipes/replay_test.yaml` —— 一个 toy recipe，专为 smoke test 设计。
+
+```bash
+# 1. 准备共享 conda 环境（CLAUDE.md 强制要求，不要每仓单独建 env）
+conda create -n pet-pipeline python=3.11.x -y
+conda activate pet-pipeline
+
+# 2. 装 pet-schema → pet-infra → pet-train（β peer-dep 装序约束）
+pip install 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v3.3.0'
+pip install 'pet-infra  @ git+https://github.com/Train-Pet-Pipeline/pet-infra@v2.9.5'
+pip install 'pet-train  @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.2.5'
+
+# 3. clone pet-infra 拿 recipe
+git clone https://github.com/Train-Pet-Pipeline/pet-infra.git
+cd pet-infra
+
+# 4. 验证 plugin 都能 discover
+pet validate recipes/replay_test.yaml
+# 期望输出: validate ✅, plugins discovered: TRAINERS=4, EVALUATORS=5, ...
+
+# 5. 跑！
+pet run recipes/replay_test.yaml
+# 期望输出:
+#   stage[train]: writing card to .cache/cards/sft_001.json
+#   stage[eval]:  metrics={"f1_macro": 0.42}
+#   stage[gate]:  status=passed (threshold f1_macro>=0.3)
+
+# 6. 看 ClearML offline metrics（如果你设了 CLEARML_OFFLINE_MODE=1）
+ls clearml_offline/   # 找到一个 .zip，里面有 metrics.jsonl
+```
+
+如果你看到 `passed`，恭喜——你刚刚跑通了 train→eval→gate 三段，整个 9 仓里的 4 个仓
+（schema/infra/train/eval）都参与了这次执行。
+
+### 词汇表（10 个会反复出现的术语）
+
+| 术语 | 一句话定义 | 何处展开 |
+|---|---|---|
+| **ModelCard** | 跨阶段状态契约——训练后写、量化时读、OTA 部署时再写 deployment_history | §2 ModelCard Lifecycle |
+| **ExperimentRecipe** | YAML 描述的有向无环图——告诉 Orchestrator 跑哪些 stage、什么顺序 | §3.1 ExperimentRecipe |
+| **β peer-dep** | 共享类型仓不写进 pyproject.dependencies，由消费方先 `pip install` 装 | §5 β peer-dep |
+| **Plugin Registry** | mmengine.Registry 实例（TRAINERS/EVALUATORS/...），存"name → class" 映射 | §4 Plugin 系统 |
+| **Entry-point discovery** | `importlib.metadata.entry_points("pet_infra.plugins")` 找到所有装好的 plugin 包 | §4 Entry-point discovery |
+| **Replay** | 用旧 ModelCard.resolved_config_uri 重跑训练；sha256 不匹配 fail-fast、git_shas 漂移 warn | §7.2 Replay |
+| **Gate** | evaluator 跑完后的 pass/fail 决策；只有 passed 才允许进 quantize/OTA | §3.6 pet-eval |
+| **Canary rollout** | OTA 5 状态机：先推 5% 设备观察 48h，没异常再推全量 | §3.8 pet-ota |
+| **Fixture-real test** | 必须真跑生产代码路径而不是 mock；DEV_GUIDE §11.8 retro guardrail 强制 | §4 Plugin contract 测试纪律 |
+| **compatibility_matrix.yaml** | 真理源——告诉你某个时间点哪个 release 配哪个 release 兼容 | §5 compatibility_matrix |
+
+### 常见困惑（newcomer FAQ）
+
+**"为什么 `pip install pet-train` 装完 import 报 `ModuleNotFoundError: pet_schema`？"**
+
+因为 pet-train `pyproject.toml` 故意不写 `pet-schema` 进 dependencies——这是 β peer-dep
+设计（§5）。装序必须是 `pet-schema → pet-infra → pet-train`，按 `compatibility_matrix.yaml`
+当前 row 的 tag 装。这种"装序约束"看起来反常，但它解决了"pet-data 想要 schema v3.0、pet-train
+想要 v3.3"的依赖冲突地狱——pin 在消费侧而不是被消费侧。
+
+**"我加了一个 trainer plugin 但 `pet validate` 找不到它"**
+
+最常见原因：忘了在 plugin 仓的 `pyproject.toml` 写 `[project.entry-points."pet_infra.plugins"]`，
+或者 plugin 模块被 import 时没调用 `@TRAINERS.register_module(...)` 装饰器。验证：
+`python -c "from importlib.metadata import entry_points; print(list(entry_points(group='pet_infra.plugins')))"`
+应该看到你的包名。详见 §7.4 添加新 trainer plugin 完整流程。
+
+**"我改了 ModelCard 字段，pet-train 里 `card.foo = bar` 抛 ValidationError"**
+
+ModelCard 用 Pydantic `extra="forbid"`——schema 不允许动态字段。改 schema 要：
+(1) 在 pet-schema 提 PR + ≥2 reviewer approve；(2) bump pet-schema 版本；(3) 下游 7 仓
+`compatibility_matrix.yaml` row 同步 bump。这是设计——契约不能漂移。
+
+**"`pet run` 跑完没在 ClearML dashboard 看到任何 metric"**
+
+3 个可能：(1) 你设了 `CLEARML_OFFLINE_MODE=1`，metrics 写在本地 `.zip` 里没上传；
+(2) 没设环境变量 `CLEARML_API_HOST` 等；(3) trainer plugin 没把 metrics 写进
+`card.metrics`——F027 retro 就是这个 bug，runner 不主动转发 metrics 到 logger，
+plugin 必须自己填。验证：`pet run --dry-run recipe.yaml` 看 ModelCard 输出 metrics 字段
+是不是空。
+
+**"为什么 dev 上的 PR 突然 CONFLICTING？我没改任何冲突文件"**
+
+经典 dev/main divergence——上次 dev → main 是 squash merge，main 上是新 commit hash，
+dev 没追到。下次 dev → main PR 走 git 三方合并就会"双方都改了"误判。修复：先在本地
+`git checkout dev && git merge origin/main`，push 回去 dev，PR 自动 unblock。这是
+documented pattern，每个 release cycle 都遇到一次。
+
+**"我在主目录跑 `git status` 报 not a git repository"**
+
+设计如此——`/Train-Pet-Pipeline/` 是聚合目录而不是 git 仓库。每个子目录是独立仓库
+（`pet-schema/.git` 等）。任何 git 命令必须先 `cd` 进具体仓。这避免了"主仓追踪 9 个
+submodule" 的复杂度，代价是多目录切换。
+
+---
+
 ## 0. TL;DR
 
 Train-Pet-Pipeline 是一条从原始视频帧到端侧 AI 模型的完整 MLOps 流水线，面向 RK3576

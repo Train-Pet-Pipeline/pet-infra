@@ -91,4 +91,5 @@ Shared lint and mypy configs live in `pet-infra/shared/`. The `sync_to_repo.sh` 
 ## Further Reading
 
 - `docs/DEVELOPMENT_GUIDE.md` — authoritative spec: branching, commit format, cross-repo deps, CI rules
+  - **§11.8** — "Plugin-contract test 纪律：fixture-real 而非 mock-only" (F008-F027 retro guardrail, added 2026-04-27). Every PR that modifies a plugin contract must include a fixture-real test checkbox in the PR description.
 - `docs/runbook.md` — common failure modes and emergency procedures

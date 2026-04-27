@@ -1,0 +1,32 @@
+{
+  "id": "replay_test_train_8c00fb92",
+  "version": "2.0.0",
+  "modality": "vision",
+  "task": "test",
+  "arch": "tiny_test_transformer",
+  "training_recipe": "replay_test",
+  "recipe_id": "replay_test",
+  "hydra_config_sha": "bbfde3f315c15be3a4a171d74af2563ad0b66a521e5b2b966fcbf0eb3dbc3257",
+  "git_shas": {
+    "pet_train": "056721f7bad15331a82392cfec247b40af8dc4ab"
+  },
+  "dataset_versions": {},
+  "checkpoint_uri": "file:///tmp/smoke_tiny/tiny_model.pt",
+  "quantization": null,
+  "edge_artifacts": [],
+  "intermediate_artifacts": {},
+  "deployment_history": [],
+  "parent_models": [],
+  "lineage_role": null,
+  "metrics": {
+    "train_loss": 1.0193010568618774
+  },
+  "gate_status": "pending",
+  "trained_at": "2026-04-26T16:13:53.375519Z",
+  "trained_by": "root",
+  "clearml_task_id": null,
+  "dvc_exp_sha": null,
+  "resolved_config_uri": "file:///root/autodl-tmp/eco-validation/runs/F012-replay-test/cards/replay_test_train_8c00fb92_resolved_config.yaml",
+  "notes": null,
+  "hardware_validation": null
+}

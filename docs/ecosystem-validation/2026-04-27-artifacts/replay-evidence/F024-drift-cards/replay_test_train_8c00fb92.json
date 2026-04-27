@@ -1,0 +1,40 @@
+{
+  "id": "replay_test_train_8c00fb92",
+  "version": "2.0.0",
+  "modality": "vision",
+  "task": "test",
+  "arch": "tiny_test_transformer",
+  "training_recipe": "replay_test",
+  "recipe_id": "replay_test",
+  "hydra_config_sha": "bbfde3f315c15be3a4a171d74af2563ad0b66a521e5b2b966fcbf0eb3dbc3257",
+  "git_shas": {
+    "pet-annotation": "e6552bd840f7c26227ab8ff46fdc744690d84624",
+    "pet-data": "e222c549ee1b743b2346d357ad26f93a78a4821a",
+    "pet-eval": "329f3ccf732ab93d1b00026d839be7c6625a7062",
+    "pet-id": "4263c5b44389b03a66607f9582bfdea99cd8347e",
+    "pet-infra": "6277623bb3df8d6894d5f64cccf939303b1e7146",
+    "pet-ota": "8517e8b74f0c530596aba792f974f956845aa4ef",
+    "pet-quantize": "abe315c2015111c5d574836dd5a97799f4ee6859",
+    "pet-schema": "0f9eb193381a8cf4c8787ff27df7fa1da1859dea",
+    "pet-train": "4c773bf9cf5994cfba4da9a0e2342d08c018ba8b"
+  },
+  "dataset_versions": {},
+  "checkpoint_uri": "file:///tmp/smoke_tiny/tiny_model.pt",
+  "quantization": null,
+  "edge_artifacts": [],
+  "intermediate_artifacts": {},
+  "deployment_history": [],
+  "parent_models": [],
+  "lineage_role": null,
+  "metrics": {
+    "train_loss": 1.0648314952850342
+  },
+  "gate_status": "pending",
+  "trained_at": "2026-04-26T17:40:54.515360Z",
+  "trained_by": "root",
+  "clearml_task_id": null,
+  "dvc_exp_sha": null,
+  "resolved_config_uri": "file:///root/autodl-tmp/eco-validation/runs/F024-drift-test/cards/replay_test_train_8c00fb92_resolved_config.yaml",
+  "notes": null,
+  "hardware_validation": null
+}

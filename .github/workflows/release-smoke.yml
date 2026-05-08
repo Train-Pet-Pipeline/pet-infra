@@ -9,9 +9,10 @@ on:
 jobs:
   smoke-small:
     # NOTE: Ideally this runs on [self-hosted, gpu] for real CUDA smoke; no self-hosted
-    # GPU runner is provisioned yet. Until then this job validates recipe composition
-    # and plugin registration only (--dry-run equivalent). Upgrade runs-on when
-    # GPU runners are available in the org.
+    # GPU runner is provisioned yet. Until then this job validates plugin registration
+    # only — `pet validate <recipe>` runs full preflight which requires RK SDK-gated
+    # plugins (e.g. vlm_calibration_subset) that can't be installed on ubuntu-latest,
+    # so the recipe-validate step is held back until a GPU/SDK runner exists.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,16 +25,23 @@ jobs:
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y libsndfile1
       - name: Install pet-schema peer dependency
-        run: pip install 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v3.0.0'
+        run: pip install 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v3.3.0'
 
-      - name: Install pet-infra + pet-train + pet-eval (matrix 2026.07 final pins)
+      - name: Install pet-infra + pet-train + pet-quantize + pet-eval (matrix 2026.11 pins)
         run: |
           pip install -e ".[dev]"
-          pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.0.0'
-          pip install 'pet-eval @ git+https://github.com/Train-Pet-Pipeline/pet-eval@v2.0.0'
+          pip install 'pet-train @ git+https://github.com/Train-Pet-Pipeline/pet-train@v2.2.5'
+          # pet-quantize is a runtime peer of pet-eval (β peer-dep, no git URL in
+          # pet-eval's pyproject), so preinstall it from git before pet-eval
+          # otherwise pip will try PyPI for the bare name and fail.
+          pip install 'pet-quantize @ git+https://github.com/Train-Pet-Pipeline/pet-quantize@v2.1.0'
+          pip install 'pet-eval @ git+https://github.com/Train-Pet-Pipeline/pet-eval@v2.5.1'
+          # Defense-in-depth: pin pet-schema + pet-infra last-wins so any
+          # transitive resolver step can't downgrade them. Mirrors
+          # cross-repo-smoke-install.yml, which is currently 7/7 green.
+          pip install --upgrade --force-reinstall --no-deps 'pet-schema @ git+https://github.com/Train-Pet-Pipeline/pet-schema@v3.3.0'
+          pip install --upgrade --force-reinstall --no-deps -e .
       - name: Assert plugins register
         run: |
           python -c "from pet_train.plugins._register import register_all as r1; r1(); print('pet_train plugins registered OK')"
           python -c "from pet_eval.plugins._register import register_all as r1; r1(); print('pet_eval plugins registered OK')"
-      - name: Validate smoke_small recipe (no GPU available in CI; validates composition + preflight)
-        run: pet validate --recipe=recipes/smoke_small.yaml

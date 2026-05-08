@@ -45,4 +45,9 @@ jobs:
           python -c "from pet_train.plugins._register import register_all as r1; r1(); print('pet_train plugins registered OK')"
           python -c "from pet_eval.plugins._register import register_all as r1; r1(); print('pet_eval plugins registered OK')"
       - name: Validate smoke_small recipe (no GPU available in CI; validates composition + preflight)
+        env:
+          # pet-quantize's plugin _register.py gates rknn/rkllm imports behind
+          # this flag (designed exactly for runners without the RK SDKs).
+          # Without it, plugin discovery raises ModuleNotFoundError for `rknn`.
+          PET_ALLOW_MISSING_SDK: "1"
         run: pet validate --recipe=recipes/smoke_small.yaml

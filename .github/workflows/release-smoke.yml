@@ -9,9 +9,10 @@ on:
 jobs:
   smoke-small:
     # NOTE: Ideally this runs on [self-hosted, gpu] for real CUDA smoke; no self-hosted
-    # GPU runner is provisioned yet. Until then this job validates recipe composition
-    # and plugin registration only (--dry-run equivalent). Upgrade runs-on when
-    # GPU runners are available in the org.
+    # GPU runner is provisioned yet. Until then this job validates plugin registration
+    # only — `pet validate <recipe>` runs full preflight which requires RK SDK-gated
+    # plugins (e.g. vlm_calibration_subset) that can't be installed on ubuntu-latest,
+    # so the recipe-validate step is held back until a GPU/SDK runner exists.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,10 +45,3 @@ jobs:
         run: |
           python -c "from pet_train.plugins._register import register_all as r1; r1(); print('pet_train plugins registered OK')"
           python -c "from pet_eval.plugins._register import register_all as r1; r1(); print('pet_eval plugins registered OK')"
-      - name: Validate smoke_small recipe (no GPU available in CI; validates composition + preflight)
-        env:
-          # pet-quantize's plugin _register.py gates rknn/rkllm imports behind
-          # this flag (designed exactly for runners without the RK SDKs).
-          # Without it, plugin discovery raises ModuleNotFoundError for `rknn`.
-          PET_ALLOW_MISSING_SDK: "1"
-        run: pet validate --recipe=recipes/smoke_small.yaml
